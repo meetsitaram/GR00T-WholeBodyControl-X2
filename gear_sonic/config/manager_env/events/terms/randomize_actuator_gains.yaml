@@ -1,0 +1,32 @@
+# =============================================================================
+# Actuator-Gain Randomization (KP / KD)
+# =============================================================================
+#
+# Multiplicatively scales every actuator's stiffness (KP) and damping (KD)
+# by a random factor sampled once per env reset, simulating real-world
+# variation in motor calibration, gear backlash, and PD tuning drift.
+#
+# Range 0.85-1.15 is a moderate sim2real target borrowed from published
+# legged-robot work (Lee et al. 2020, Margolis et al. 2022). Tighter is
+# safer for fine-tuning a pre-trained policy without regressing; wider
+# would push toward maximum real-world robustness at the cost of more
+# training iterations.
+#
+# Implementation: IsaacLab's built-in mdp.events.randomize_actuator_gains.
+# Mode "reset" re-samples on every episode (matches the existing mass
+# randomization cadence in level0_4).
+# =============================================================================
+
+randomize_actuator_gains:
+  _target_: isaaclab.managers.EventTermCfg
+  func: isaaclab.envs.mdp.events:randomize_actuator_gains
+  mode: "reset"
+  params:
+    asset_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "robot"
+      joint_names: [".*"]
+    stiffness_distribution_params: [0.85, 1.15]
+    damping_distribution_params: [0.85, 1.15]
+    operation: "scale"
+    distribution: "uniform"

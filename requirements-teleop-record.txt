@@ -1,0 +1,51 @@
+# Minimal pip install for the X2 VR teleop + LeRobot dataset recorder.
+#
+# Use this file when you don't want to install the full
+# ``gear_sonic[data_collection]`` extras (e.g., a thin venv on a
+# workstation that only does recording / calibration). For the
+# canonical pin set, prefer:
+#
+#     pip install -e gear_sonic[data_collection]
+#
+# Anything that gear_sonic[data_collection] also installs is replicated
+# here so the two paths stay in sync. If you're editing one, please
+# also edit the other.
+#
+# Versions are pinned loosely (>=) because the upstream LeRobot /
+# datasets pinning lives in pyproject.toml; this file is meant to be
+# a quick-start sufficient for one teleop + recording session.
+
+# --- Calibration audio (mandatory: Quest 3 speechSynthesis is too
+#     flaky in immersive-ar; we ship pre-rendered MP3 prompts) ---
+gtts>=2.5
+
+# --- VR teleop runtime ---
+numpy==1.26.4
+scipy>=1.11
+websockets>=11
+pyyaml>=6
+pyzmq>=25
+msgpack>=1
+msgpack-numpy>=0.4
+
+# --- Inverse kinematics + FK (X2 arms / hand) ---
+# pin (Pinocchio) is needed for some of the deeper IK paths used
+# by the recorder when running with the SONIC-coupled mode.
+pin>=2.7
+
+# --- MuJoCo simulator (recorder uses it for live preview + replay) ---
+mujoco>=3.0
+opencv-python>=4.9
+
+# --- LeRobot dataset writer ---
+# Note: huggingface lerobot is fast-moving; pin the exact commit used
+# in the gear_sonic[data_collection] extras above. If you bump the
+# pin in pyproject.toml, also bump it here.
+lerobot @ git+https://github.com/huggingface/lerobot.git@a445d9c9da6bea99a8972daa4fe1fdd053d711d2
+datasets==3.6.0
+av>=14.2
+
+# --- Misc utilities used by the scripts ---
+tyro>=0.8
+loguru>=0.7
+tqdm>=4.66

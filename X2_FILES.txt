@@ -1,0 +1,572 @@
+# X2_FILES.txt -- ownership manifest of the AgiBot X2 port
+#
+# Every tracked file that is NOT upstream NVIDIA GR00T-WholeBodyControl (base 4141c34).
+# Regenerate + verify: python tools/check_x2_ownership.py [--write]
+# Format: <status>\t<path>\t<purpose>   status A = added by the port, M = upstream file modified, D = upstream file removed
+#
+# Anything tracked that is absent from this list is upstream and must be treated as such on a rebase.
+
+A	MODELS.md	MODELS.md — the shipped default set, and bring-your-own models for the X2 stack — One native 3-encoder SONIC set ships in this repository under
+A	README_X2.md	AgiBot X2 Ultra support — This branch adds the AgiBot X2 Ultra (31 DOF, OmniHand) as a second
+A	docs/x2/ARCHITECTURE.md	X2 stack architecture — Diagrams of the runtime stacks, the teleop sources, the model build chain and
+A	docs/x2/BUILD_CHAIN.md	Build chain — what rebuilds when — Four kinds of change reach the X2 stack: a new **model**, new **motion data**,
+A	docs/x2/F01_gamepad.md	F01 — Gamepad control (sim + real) — The pad is the primary input on the robot and the default input in sim.
+A	docs/x2/F02_quest_vr.md	F02 — Quest 3 VR control — The Quest 3 drives the kplanner (locomotion, sticks) and the arm/hand IK
+A	docs/x2/F03_pico_teleop.md	F03 — Pico whole-body teleop — Two architectures ship, both driven by the same headset
+A	docs/x2/F04_motion_replay.md	F04 — Motion replay through the pose encoder — `run_motion_replay.sh` streams a robot-joint clip (motion-lib `.pkl` or
+A	docs/x2/F05_pico_tape_replay.md	F05 — Pico-tape replay through the SMPL encoder — A recorded Pico tape replays through the **exact live path
+A	docs/x2/F06_incumbent_models.md	F06 — Native 3-encoder models (dual-head export path) — A native X2 checkpoint (trained with `sonic_x2_ultra*.yaml`-style configs
+A	docs/x2/F07_frozen_g1_model.md	F07 — Frozen G1-core models (public core + X2 LoRA) — The frozen-G1 recipe keeps the public NVIDIA G1 SONIC core
+A	docs/x2/F08_kplanner_wholebody_switching.md	F08 — kplanner <-> whole-body teleop switching — One operator, one headset (or headset + pad), two authorities
+A	docs/x2/F09_mujoco_sim.md	F09 — MuJoCo sim stack — Two launchers, one stack
+A	docs/x2/F10_real_robot_colcon.md	F10 — Real robot: PC2 bring-up, colcon build, push, ritual — The robot side runs on PC2 (Jetson Orin NX, aarch64) under one prefix
+A	docs/x2/F11_docker.md	F11 — Docker test image — `gear_sonic_deploy/docker_x2/` is a ROS 2 Humble + ONNX Runtime + MuJoCo
+A	docs/x2/F12_training_nebius.md	F12 — Training and finetuning on Nebius — Training uses the upstream SONIC trainer (`gear_sonic/train_agent_trl.py`,
+A	docs/x2/README.md	AgiBot X2 Ultra on GEAR-SONIC — runbook index — This directory documents the X2 feature set carried on this branch: gamepad
+A	docs/x2/gamepad_cheatsheet.md	X2 gamepad cheat sheet (demo pad, untethered) — Bindings come from two places and the sheet reflects their combination
+A	docs/x2/gamepad_control_map.html	X2 pad — control map
+A	gear_sonic/config/callbacks/finetune_rate_schedule.yaml	Anneal fine_tune_dataset.finetune_sample_rate without restarting the run.
+A	gear_sonic/config/exp/manager/universal_token/all_modes/sonic_x2_frozen_core_t2.yaml	@package _global_ FROZEN-CORE T2 — dynamics adaptation of the FROZEN GEAR-SONIC G1 core on X2.
+A	gear_sonic/config/exp/manager/universal_token/all_modes/sonic_x2_leg5_pico_combined_ft.yaml	@package _global_ LEG 5 -- the INCUMBENT X2-native lineage (3 encoders, trained from scratch on X2, no frozen G1 core) resumed with the combined Pico fine-tune set.
+A	gear_sonic/config/exp/manager/universal_token/all_modes/sonic_x2_s1_fresh_vendor_waistmap.yaml	@package _global_ S1 -- fresh vendor-plant run of the frozen-G1-core lineage WITH the wrist and waist RANGE-MAP fixes.
+A	gear_sonic/config/exp/manager/universal_token/all_modes/sonic_x2_ultra.yaml	@package _global_ SONIC X2 Ultra config — 3 encoders (G1/motion tracking, teleop, SMPL) for Agibot X2 Ultra.
+A	gear_sonic/config/exp/manager/universal_token/all_modes/sonic_x2_ultra_smoke.yaml	@package _global_ SONIC X2 Ultra smoke test: the FULL 3-encoder config (g1 motion tracking, teleop, SMPL) with a short schedule.
+A	gear_sonic/config/kplanner_profiles/bigrun_teleop_v1.env	kplanner profile: bigrun_teleop_v1 (2026-08-09) One named, versioned, reviewable set of runtime knobs.
+A	gear_sonic/config/kplanner_profiles/g1core_bare_v1.env	g1core_bare_v1 — MINIMAL daemon plumbing for the wrapped G1 2M core (frozen-core).
+A	gear_sonic/config/manager_env/events/terms/randomize_actuator_gains.yaml	Actuator-Gain Randomization (KP / KD)
+A	gear_sonic/config/manager_env/events/terms/randomize_actuator_gains_deploy.yaml	Actuator-Gain Randomization (KP / KD) -- DEPLOY-BRACKETING RANGE
+A	gear_sonic/config/manager_env/events/tracking/level0_4_pd.yaml	Event composition with actuator-gain (KP/KD) randomization layered on top of the level0_4 preset.
+A	gear_sonic/config/manager_env/events/tracking/level0_4_pd_deploy.yaml	level0_4 + actuator-gain randomization over the DEPLOY-BRACKETING range.
+A	gear_sonic/config/manager_env/observations/policy/local_dir_hist_v2.yaml	Standard policy observations composition, with observation noise ranges doubled relative to local_dir_hist.yaml — used by sonic_x2_ultra_demo_v2.
+A	gear_sonic/config/manager_env/observations/terms/motion_anchor_ori_heading.yaml	Observation term: reference-motion anchor orientation expressed in the heading frame (X2 'heading' anchor mode).
+A	gear_sonic/config/manager_env/observations/terms/motion_anchor_ori_heading_mf_nonflat.yaml	Observation term: multi-future anchor orientation in the heading frame for non-flat terrain runs.
+A	gear_sonic/config/manager_env/observations/terms/smpl_root_ori_heading_multi_future.yaml	Observation term: SMPL root orientation (multi-future window) in the heading frame, used by the smpl encoder.
+A	gear_sonic/config/manager_env/observations/tokenizer/unitoken_all_noz_heading.yaml	Universal-token observations with robot-heading-normalized root orientation.
+A	gear_sonic/config/manager_env/rewards/terms/energy_consumption.yaml	Reward term: joint torque·velocity energy penalty used by the X2 softland reward set.
+A	gear_sonic/config/manager_env/rewards/terms/feet_grf_overshoot.yaml	Penalize per-foot vertical GRF above soft_ratio x robot weight -- shapes the post-contact LOADING (a hard "catch" after a slow touchdown).
+A	gear_sonic/config/manager_env/rewards/terms/feet_impact_vel.yaml	Penalize downward foot speed^2 at the touchdown tick only (foot slam on recovery steps / dance moves).
+A	gear_sonic/config/manager_env/rewards/terms/tracking_vr_2wrists_local_ori.yaml	Reward term: local-frame orientation tracking of both wrists for VR/teleop-driven training.
+A	gear_sonic/config/manager_env/rewards/tracking/base_5point_local_feet_acc_softland.yaml	Standard reward composition + SOFT-LANDING terms (2026-07-16): touchdown impact-velocity penalty + GRF-overshoot penalty on the feet.
+A	gear_sonic/config/manager_env/rewards/tracking/local_feet_acc_energy_5pt.yaml	SONIC v1.1 reward composition.
+A	gear_sonic/config/manager_env/rewards/tracking/local_feet_acc_energy_5pt_softland.yaml	SONIC v1.1 reward composition + our SOFT-LANDING terms.
+A	gear_sonic/config/robot_plant/x2_ultra.yaml	DEFAULT PLANT — the config every consumer loads unless X2_PLANT or an explicit name overrides.
+A	gear_sonic/config/robot_plant/x2_ultra_legacy_pre20260823.yaml	X2 Ultra actuator plant — AS IT STOOD BEFORE the vendor datasheet.
+A	gear_sonic/config/robot_plant/x2_ultra_vendor_20260823.yaml	X2 Ultra actuator plant — VENDOR DATASHEET, 2026-08-23.
+A	gear_sonic/data/assets/robot_description/mjcf/x2_ultra.xml	MuJoCo model of the AgiBot X2 Ultra (31 joints + free root, 41 STL meshes); the sim plant for every sim stack and eval.
+A	gear_sonic/data/assets/robot_description/omnihand/README.md	OmniHand 2025 — vendored kinematic assets — Articulated 10-active-DOF dexterous hand from AgiBot, used by the X2 Ultra
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/.gitignore	Stock OmniHand meshes are fetched at setup — only our custom clipped wrist meshes are committed.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/finger_abad.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/finger_dip.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/finger_pip.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/l_palm.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/l_thumb_roll.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/left_wrist_roll_clipped_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/r_palm.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/r_thumb_roll.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/right_wrist_roll_clipped_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/thumb_abad.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/thumb_dip.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/thumb_mcp.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/meshes/thumb_pip.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/omnihand/omnihand_left.urdf	URDF of the left OmniHand (5 finger joints) composed onto the X2 wrist by compose_x2_with_omnihand.
+A	gear_sonic/data/assets/robot_description/omnihand/omnihand_right.urdf	URDF of the right OmniHand composed onto the X2 wrist in sim.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/.gitignore	AgiBot mesh assets are fetched at setup time — never committed
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/README.md	X2 meshes (fetched from AgiBot — not stored in this repo) — The 45 STL meshes referenced by `x2_ultra.urdf` / `x2_ultra_sphere_feet.urdf
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/head_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/head_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/imu_in_head_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/imu_in_pelvis_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/imu_in_torso_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_ankle_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_ankle_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_elbow_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_hip_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_hip_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_hip_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_knee_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_shoulder_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_shoulder_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_shoulder_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_wrist_fist_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_wrist_hand_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_wrist_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_wrist_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/left_wrist_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/lidar_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/pelvis.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/rgb_head_center_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/rgb_head_rear_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/rgbd_head_front_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_ankle_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_ankle_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_elbow_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_hip_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_hip_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_hip_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_knee_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_shoulder_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_shoulder_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_shoulder_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_wrist_fist_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_wrist_hand_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_wrist_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_wrist_roll_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/right_wrist_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/stereo_head_front_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/torso_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/torso_plus_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/waist_pitch_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/meshes/waist_yaw_link.STL	X2 Ultra / OmniHand link mesh (binary STL via git-lfs); referenced by the MJCF/URDF geometry.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/x2_ultra.urdf	URDF of the X2 Ultra used by Isaac Lab training and the FK/IK helpers.
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/x2_ultra_sphere_feet.urdf	X2 URDF variant with sphere feet collision (the training plant variant used by the pico/leg5 configs).
+A	gear_sonic/data/assets/robot_description/urdf/x2_ultra/x2_ultra_sphere_feet_cams_calibrated.urdf	Sphere-feet URDF with the calibrated head/torso camera mount frames (used by the sim ego-view renderer).
+A	gear_sonic/data/audio/cue_already_recording.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_b_needs_trigger.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_captured.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_deadman_on.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_estop_activating.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_estop_damping.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_micro_step.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_mode_arm_manipulation.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_mode_locomotion.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_mode_off.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_mode_whole_body.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_not_recording.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_record_save.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_record_started.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_record_stopped.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_replay_done.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/cue_replay_started.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/teleop_disengaged.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/audio/teleop_engaged.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
+A	gear_sonic/data/encoder/x2_observation_config.yaml	X2 Encoder - Observation Configuration
+A	gear_sonic/data/motions/gestures/gestures_v1.yaml	Live-trigger gesture catalog for the Quest3 planner stack.
+A	gear_sonic/data/motions/kplanner_idle_anchor_g1teleop_v3.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/README.md	X2 Pico chores reference set — Operator Pico full-body teleop session on the AgiBot X2 Ultra (house-chores
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_014256Z_x2_seg01.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_014453Z_x2_seg02.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_015713Z_x2_seg03.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_015752Z_x2_seg04.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_021151Z_x2_seg09.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_021237Z_x2_seg10.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_022238Z_x2_seg11.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_022253Z_x2_seg12.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_022420Z_x2_seg13.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_022711Z_x2_seg15.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_022917Z_x2_seg16.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_022944Z_x2_seg17.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_023022Z_x2_seg18.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/smpl_sidecars/pico_20260917_023100Z_x2_seg19.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/tapes/session_20260917_014256Z_x2_seg01.npz	Test fixture capture (operator headset/controller frames) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/tapes/session_20260917_014453Z_x2_seg02.npz	Test fixture capture (operator headset/controller frames) via git-lfs.
+A	gear_sonic/data/motions/x2_pico_chores/x2_pico_chores_0917.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_planner_bins.yaml	X2 heuristic planner — bin specification.
+A	gear_sonic/data/motions/x2_planner_primitives_recipes.yaml	X2 heuristic-planner primitive recipes.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/README.md	X2 MC Gesture Recordings — In-repo (LFS-tracked) corpus of mobile-app-triggered Motion Controller
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/both_heart_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/both_heart_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/both_peace_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/both_raise_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/both_thumbs_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/bow_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/bow_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/chest_cross_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/chest_wave_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/clap_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/cupped_hand_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/dynamic_wave_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/hug_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/hug_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_bump_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_five_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_heart_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_kiss_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_peace_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_raise_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_shake_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_thumbs_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_wave_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_wave_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/left_wave_003.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/raise_left_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/raise_right_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_bump_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_five_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_heart_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_kiss_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_peace_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_raise_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_shake_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_thumbs_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_wave_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/right_wave_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/sadness_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/salute_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/scratch_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/scratch_back_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/shake_head_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/squat_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/squat_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/thinking_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/turn_wave_left_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/turn_wave_right_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/waist_left_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/waist_left_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/waist_right_001.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/motions/x2_recorded/mc_gestures/waist_right_002.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
+A	gear_sonic/data/operator_calibrations/default.yaml	Neutral reference operator calibration (arms-down / T-pose / arms-forward / namaste wrist samples) used when no per-operator file exists.
+A	gear_sonic/data/robot_model/instantiation/x2_ultra.py	Factory function to instantiate a configured X2 Ultra RobotModel from URDF.
+A	gear_sonic/data/robot_model/supplemental_info/x2_ultra/__init__.py	X2 Ultra supplemental info: joint groups, limits, and default poses.
+A	gear_sonic/data/robot_model/supplemental_info/x2_ultra/x2_ultra_supplemental_info.py	X2 Ultra supplemental info: 31-DOF body + 20-DOF OmniHand action space.
+A	gear_sonic/data/scripted_demos/eleven_motion_sequence.yaml	Eleven-motion sequence covering every working family.
+A	gear_sonic/data/scripted_demos/forward_back_turn.yaml	Canonical "distance walking + 90 deg turn" demo for the X2 heuristic planner.
+A	gear_sonic/data_process/build_pico_finetune_bundle.py	Stage a retargeted Pico teleop corpus into the SONIC fine-tune set.
+A	gear_sonic/data_process/build_x2_demo_motion_lib.py	Build the demo-v1 motion_lib PKL by merging everything under ``gear_sonic/data/motions/demo_v1_sources/<subdir>/*.pkl``.
+A	gear_sonic/data_process/convert_x2_record_to_motion_lib.py	Convert X2 recorder NPZ files into motion_lib PKL entries.
+A	gear_sonic/data_process/filter_kinematic_continuity.py	Kinematic-sanity gate for motion-lib corpora (companion to the dynamic `_feasible` filter, which executes clips but never checks kinematic continuity).
+A	gear_sonic/data_process/validate_pico_corpus.py	Validate a retargeted Pico teleop corpus before it joins the fine-tune set.
+A	gear_sonic/envs/manager_env/robots/mapping_utils.py	Generate IsaacLab<->MuJoCo index maps from name lists (never hand-type them).
+A	gear_sonic/envs/manager_env/robots/plant_config.py	Load an X2 actuator plant (armature / effort / PD) from YAML.
+A	gear_sonic/envs/manager_env/robots/x2_ultra.py	Agibot X2 Ultra motor parameters.
+A	gear_sonic/scripts/bringup_sim.py	Assisted bring-up ("clay-hold") sim battery.
+A	gear_sonic/scripts/build_x2_planner_primitives.py	Build ``x2_planner_primitives.pkl`` from a recipes YAML.
+A	gear_sonic/scripts/check_plant_consistency.py	Assert the THREE copies of the X2 plant agree — yaml, training, MJCF.
+A	gear_sonic/scripts/check_smpl_sidecars.py	Gate for SMPL sidecar files before they are staged for training or SMPL-mode eval.
+A	gear_sonic/scripts/cloud/bootstrap_fresh_node.sh	Bootstrap a fresh Nebius (or any Ubuntu 24.04 + CUDA 12) GPU node into a state where ``run_smoke_8gpu.sh`` can launch X2 Ultra training.
+A	gear_sonic/scripts/cloud/cluster_watchdog.sh	Auto-heal loop for the preemptible GPU cluster.
+A	gear_sonic/scripts/cloud/elastic-supervisor.service	Boot-time auto-join for elastic training workers.
+A	gear_sonic/scripts/cloud/launch_bigrun.sh	SONIC big run -- N nodes x 8 GPUs under accelerate (multi-machine).
+A	gear_sonic/scripts/cloud/launch_bigrun_resume.sh	SONIC big-run RESUME -- N nodes x 8 GPUs under accelerate (multi-machine).
+A	gear_sonic/scripts/cloud/nebius_gpu_scan.py	Scan Nebius for real-time GPU capacity available to your tenant.
+A	gear_sonic/scripts/cloud/nebius_parallel_provision.py	Parallel-provision an 8x GPU node on Nebius across multiple region/platform variants.
+A	gear_sonic/scripts/cloud/preflight_hw.sh	Hardware pre-flight for a multi-node SONIC launch.
+A	gear_sonic/scripts/cloud/preflight_train.py	Fast CPU pre-flight for a training config — no IsaacSim, no GPU.
+A	gear_sonic/scripts/cloud/resample_motion_pkl.py	Resample a motion_lib pkl to a target fps by INTERPOLATION.
+A	gear_sonic/scripts/cloud/run_pico_v8_8gpu.sh	PICO FINE-TUNE LEG -- single 8-GPU node, resume from an incumbent checkpoint.
+A	gear_sonic/scripts/cloud/run_smoke_8gpu.sh	8-GPU smoke test for the X2 Ultra training stack.
+A	gear_sonic/scripts/cloud/stage_local.sh	Stage the SONIC training payload to node-local disk so training does not read 100k+ small files off a shared network mount from 32 GPUs.
+A	gear_sonic/scripts/cloud/stage_pico_v8.sh	Stage the pico fine-tune inputs onto a training node, md5-verified both sides.
+A	gear_sonic/scripts/cloud/wandb_health.py	5-minute wandb health check for the T2 big run (rule 14, metric-side).
+A	gear_sonic/scripts/cloud/watch_8gpu_capacity.sh	Background watcher: polls Nebius capacity every INTERVAL seconds, logs the 8-GPU table to logs/nebius_capacity_watch.log, and emits ALERT lines when on-demand availability for 8xH200 or 8xH100 in any region changes
+A	gear_sonic/scripts/compose_x2_with_omnihand.py	Compose the X2 Ultra MJCF with two articulated OmniHand-2025 chains.
+A	gear_sonic/scripts/dump_isaaclab_step0.py	Dump IsaacLab step-0 observations and policy intermediates for MuJoCo comparison.
+A	gear_sonic/scripts/eval_x2_mujoco.py	Evaluate a trained SONIC checkpoint for the X2 Ultra in MuJoCo.
+A	gear_sonic/scripts/eval_x2_mujoco_onnx.py	ONNX-driven MuJoCo evaluation for X2 Ultra, with optional .pt parity check.
+A	gear_sonic/scripts/export_native_all.sh	ONE command per trained native 3-encoder checkpoint -> the complete, cross-gated, provenance-stamped ONNX set the X2 stacks consume
+A	gear_sonic/scripts/frozen_core_sonic_codec.py	Frozen-core-for-SONIC T1: X2 <-> G1 tracker codec + drop-in wrapper actor.
+A	gear_sonic/scripts/frozen_core_t2_export.py	Export an frozen-core T2 training checkpoint to the HF/GEAR-SONIC layout.
+A	gear_sonic/scripts/frozen_core_t2_onnx_export.py	Export an frozen-core T2 merged SONIC checkpoint to the fused X2 deploy ONNX.
+A	gear_sonic/scripts/frozen_core_token_onnx_export.py	Export the TOKEN-INPUT deploy graph for whole-body Pico teleop on the robot.
+A	gear_sonic/scripts/g1_onnx_policy_shim.py	Drop-in ``model.policy`` shim that runs the STOCK G1 SONIC ONNX inside the IsaacLab ``im_eval`` vectorized sweep.
+A	gear_sonic/scripts/gen_kplanner_clip.py	Generate a motion clip by driving the PLANNER ONNX with a scripted intent.
+A	gear_sonic/scripts/gen_pico_audio_cues.py	Generate the Pico teleop room-audio cues (gear_sonic/data/audio/cue_<name>.wav).
+A	gear_sonic/scripts/live_pico_smpl_teleop.py	LIVE whole-body Pico teleop -> SONIC smpl encoder -> X2 in MuJoCo.
+A	gear_sonic/scripts/make_g1_lora_warmstart.py	Build the G1-LoRA warm-start checkpoint from the frozen release.
+A	gear_sonic/scripts/native_dual_head_onnx_export.py	Export ONE deploy graph with BOTH reference heads of a native 3-encoder X2 checkpoint ("one SONIC on the robot, both pipelines hot").
+A	gear_sonic/scripts/native_token_onnx_export.py	Split a NATIVE 3-encoder X2 checkpoint into the two deploy graphs the Quest-split whole-body teleop needs (2026-09-02, stage-2 of the incumbent vendor-plant adaptation)
+A	gear_sonic/scripts/onnx_obs_contract.py	Verify a deploy ONNX's observation contract against what a consumer builds.
+A	gear_sonic/scripts/onnx_policy_shim.py	ONNX-policy shim that drops into the IsaacLab eval pipeline.
+A	gear_sonic/scripts/onnx_provenance.py	ONNX provenance: SHOW what an export is, CHECK that a set belongs together.
+A	gear_sonic/scripts/pad_locomotion_bridge.py	Gamepad -> kplanner continuous-locomotion bridge (PS/Xbox pad).
+A	gear_sonic/scripts/pc2_kplanner_onnx.py	Torch-free X2 kinematic planner runtime for PC2 (Jetson).
+A	gear_sonic/scripts/pc2_pad_daemon.py	PC2-resident gamepad daemon: pad events broadcast + SAFE sonic-start ritual.
+A	gear_sonic/scripts/pc2_pico_token_service.py	PC2-side SMPL token service — the robot-local half of whole-body teleop.
+A	gear_sonic/scripts/pico_button_probe.py	Standalone Pico face-button / trigger probe.
+A	gear_sonic/scripts/pico_intent_sender.py	LAPTOP intent sender — whole-body teleop, Quest-split architecture.
+A	gear_sonic/scripts/pico_tape_to_smpl_obs.py	Pico tape -> clean SMPL stream for the SONIC smpl encoder (840-D path).
+A	gear_sonic/scripts/pico_token_sender.py	LAPTOP half of robot whole-body teleop: Pico -> tokens -> PC2 pose topic.
+A	gear_sonic/scripts/pkl_to_x2m2.py	Window a motion-lib clip and write it as X2M2 for the dance/clip player.
+A	gear_sonic/scripts/play_motion_mujoco.py	Kinematic playback of a motion-lib PKL (or baked X2M2) in the MuJoCo viewer.
+A	gear_sonic/scripts/play_x2_motion_mujoco.py	Kinematic playback of a motion_lib PKL on the X2 Ultra MuJoCo model.
+A	gear_sonic/scripts/play_xbox_controller.py	Xbox-controller launcher for the X2 demo motion-clip wire.
+A	gear_sonic/scripts/preflight_deploy_contract.py	Pre-ignition contract check: does the ROBOT's binary agree with the MODEL?
+A	gear_sonic/scripts/preflight_planner.py	Pre-deploy regression suite for pc2_kplanner_onnx — MUST PASS before any PC2 push of planner code or primitive clips.
+A	gear_sonic/scripts/quest3_manager_x2.py	X2-specific Quest 3 manager — X2 counterpart of the G1 Quest manager.
+A	gear_sonic/scripts/reexport_x2_g1_onnx.py	Re-export the fused X2 G1 deploy ONNX from a PyTorch checkpoint.
+A	gear_sonic/scripts/replay_intent_tape.py	Replay a captured intent tape through the deployed ONNX planner, offline.
+A	gear_sonic/scripts/run_local_finetune_demo_v2.sh	Local single-GPU fine-tune of the X2 Ultra SONIC policy on a demo motion corpus.
+A	gear_sonic/scripts/run_motion_replay.sh	RAW motion replay of a robot-joint clip, the run_pico_replay way: the stack is ALREADY UP (sim dual stack or the robot ritual) and this streams a clip into it.
+A	gear_sonic/scripts/run_pico_replay.sh	Replay a captured Pico SMPL recording (raw body tape, session_*_x2_segNN.npz) onto the SIM stack or the ROBOT through the exact live-teleop path (sender -> SMPL stream -> dual
+A	gear_sonic/scripts/run_pico_teleop.sh	LAPTOP half of whole-body teleop -- the "second command", as a script.
+A	gear_sonic/scripts/run_planner_smoke.sh	X2 planner smoke runner (kplanner; the legacy heuristic planner is not shipped).
+A	gear_sonic/scripts/run_x2_pico_wbc.sh	X2 whole-body Pico teleop launcher (SMPL path, live_pico_smpl_teleop.py).
+A	gear_sonic/scripts/run_x2_pkl_direct_stack.sh	X2 direct PKL-to-SONIC stack runner.
+A	gear_sonic/scripts/run_x2_quest3_planner_stack.sh	X2 Quest 3 planner-driven teleop / record stack runner (Phase 0).
+A	gear_sonic/scripts/sim_mirror_viewer.py	Host-side mirror viewer for the docker sim stack — stall-proof by design.
+A	gear_sonic/scripts/sim_onnx_planner.sh	Standard SIM launch, gated against the robot: ONNX planner + MuJoCo sim + local gamepad.
+A	gear_sonic/scripts/simstack_local.sh	§24 FULL-LOOP SIM on the WORKSTATION -- the PC twin of the robot's simtest/run_simstack.sh, so a PC-vs-Jetson trace diff compares the same topology rather than two different rigs.
+A	gear_sonic/scripts/simstack_pad_drive.py	Scripted gamepad on the planner_cmd wire (walk / crouch walk / idle) for the local sim stack; same payload and cadence as pad_locomotion_bridge.py.
+A	gear_sonic/scripts/simstack_replay_tape.py	Replay a kplanner intent tape into the LIVE local sim stack (gear_sonic/scripts/simstack_local.sh).
+A	gear_sonic/scripts/simstack_turn.sh	Pad emulator for the local sim stack (gear_sonic/scripts/simstack_local.sh).
+A	gear_sonic/scripts/sonic_motion_token_labeler.py	SONIC motion-token labeler for X2 LeRobot datasets (M6 / Stage C1).
+A	gear_sonic/scripts/vr_operator_calibrate.py	VR operator calibration script.
+A	gear_sonic/scripts/window_motion_pkl.py	Window long motion-lib clips into overlapping sub-clips for kplanner training.
+A	gear_sonic/scripts/x2_gmr_to_motion_lib.py	Stage 2 of tape -> X2: GMR raw retarget npz -> motion-lib pkl (+ render).
+A	gear_sonic/scripts/x2_kplanner.py	Neural kinematic planner daemon for AgiBot X2 Ultra.
+A	gear_sonic/scripts/x2_pad_autopair.py	PC2 boot daemon: auto-pair game controllers + hand off to the sonic ritual.
+A	gear_sonic/scripts/x2_pico_video_sender.py	X2 -> Pico headset video sender (XRoboToolkit Unity-client compatible).
+A	gear_sonic/scripts/x2_pkl_command_source.py	PKL-driven ``planner_cmd`` publisher for the X2 kplanner stack.
+A	gear_sonic/scripts/x2_pose_merger.py	x2_pose_merger.py -- laptop-side pose merger for the X2 planner stacks.
+A	gear_sonic/scripts/x2_pose_mux.py	x2_pose_mux.py -- laptop-side N-to-1 pose multiplexer.
+A	gear_sonic/tests/data/wrist_maxrange_20260905_002744Z.npz	Test fixture capture (operator headset/controller frames) via git-lfs.
+A	gear_sonic/tests/test_wrist_map_regression.py	Wrist mapping regression: operator max-range clip -> X2 wrist chain angles.
+A	gear_sonic/trl/callbacks/finetune_rate_schedule_callback.py	Trainer callback that schedules the finetune sampling rate over iterations (used by the pico finetune configs).
+A	gear_sonic/trl/modules/frozen_core_g1_actor.py	FrozenCore T2 actor module: frozen GEAR-SONIC G1 core + Phi codec, batched.
+A	gear_sonic/trl/modules/g1_lora_module.py	G1-native LoRA fine-tune module: the standard UniversalTokenModule with the g1_dyn decoder LoRA-injected and EVERYTHING ELSE frozen.
+A	gear_sonic/trl/modules/lora.py	LoRA injection for the frozen-core T2 dynamics-adaptation stage.
+A	gear_sonic/trl/modules/onnx_helpers.py	Checkpoint / MLP / FSQ helpers shared by the ONNX export and frozen-core paths.
+A	gear_sonic/utils/embodiment/__init__.py	Embodiment registry for the kinematic-replay CLI.
+A	gear_sonic/utils/embodiment/config.py	Embodiment configuration dataclass.
+A	gear_sonic/utils/embodiment/g1.py	Unitree G1 :class:`EmbodimentConfig` -- placeholder.
+A	gear_sonic/utils/embodiment/registry.py	Registry of :class:`EmbodimentConfig` instances keyed by short robot name.
+A	gear_sonic/utils/embodiment/x2.py	AgiBot X2 Ultra :class:`EmbodimentConfig`.
+A	gear_sonic/utils/embodiment/x2_constants.py	X2-specific embodiment constants not covered by :mod:`gear_sonic.utils.planner.constants`.
+A	gear_sonic/utils/install/__init__.py	Install-time utilities (auto pip-install for optional runtime deps).
+A	gear_sonic/utils/install/runtime_deps.py	Auto-install missing optional runtime dependencies on first launch.
+A	gear_sonic/utils/planner/__init__.py	Heuristic locomotion planner support library for AgiBot X2 Ultra.
+A	gear_sonic/utils/planner/blending.py	Yaw-cylinder alignment + SLERP/LERP blend helpers for primitive stitching.
+A	gear_sonic/utils/planner/constants.py	Joint-order and default-pose constants for the X2 heuristic planner.
+A	gear_sonic/utils/planner/metrics.py	Per-clip / per-window metrics for X2 planner primitive curation.
+A	gear_sonic/utils/planner/registry.py	Bin-spec / primitive-registry I/O for the X2 heuristic planner.
+A	gear_sonic/utils/planner/state_machine.py	Runtime state machine for the X2 heuristic planner.
+A	gear_sonic/utils/planner/x2_recipes.py	Recipe DSL for building **AgiBot X2 Ultra** heuristic-planner primitives.
+A	gear_sonic/utils/pose_pipeline/__init__.py	Pose-pipeline shared library.
+A	gear_sonic/utils/pose_pipeline/arbitrate.py	Stateful N-to-1 pose arbitration machine.
+A	gear_sonic/utils/pose_pipeline/clamp.py	Numerically tiny per-element rate clamps.
+A	gear_sonic/utils/pose_pipeline/fallback.py	Staged HOLD/BLEND/IDLE_CLIP fallback ladder.
+A	gear_sonic/utils/pose_pipeline/wire.py	Packed pose-message wire format helpers shared by mux + watchdog.
+A	gear_sonic/utils/teleop/common.py	Shared constants, enums, and utility classes for VR teleoperation.
+A	gear_sonic/utils/teleop/estop_gesture.py	Operator e-stop gesture detector (design: operator, 2026-08-04).
+A	gear_sonic/utils/teleop/finger_signal_filter.py	Per-side stateful smoother for Quest 3 hand inputs.
+A	gear_sonic/utils/teleop/motion_clip_session.py	On-demand motion-clip playback for the X2 recorder.
+A	gear_sonic/utils/teleop/online_sonic_tokenizer.py	Online wrapper around :class:`SonicMotionTokenLabeler` for closed-loop teleop.
+A	gear_sonic/utils/teleop/operator_calibration.py	Per-operator wrist position + orientation calibration for VR teleop.
+A	gear_sonic/utils/teleop/pico_3pt.py	Pico/XRoboToolkit 24-joint body pose -> 3-point VR pose reduction.
+A	gear_sonic/utils/teleop/pico_tape.py	Pico/XRoboToolkit stream tape: record live xrt samples, replay headset-free.
+A	gear_sonic/utils/teleop/smpl_obs.py	Torch/mujoco-free SMPL-observation assembly for the whole-body pipeline.
+A	gear_sonic/utils/teleop/solver/arm/__init__.py	X2 arm inverse kinematics for VR teleop.
+A	gear_sonic/utils/teleop/solver/arm/x2_arm_fk.py	Forward kinematics for the AgiBot X2 arm chains.
+A	gear_sonic/utils/teleop/solver/arm/x2_arm_ik.py	Damped Least-Squares (DLS) IK solver for the X2 arm.
+A	gear_sonic/utils/teleop/sonic_decoder_proprio.py	Bridge-side 990-D proprioception buffer for the SONIC pose decoder.
+A	gear_sonic/utils/teleop/sonic_token_to_pose_decoder.py	SONIC ``motion_token`` -> ``joint_pos_mj`` decoder for the live VLA bridge.
+A	gear_sonic/utils/teleop/test_estop_gesture.py	Regression suite for the operator e-stop gesture detector.
+A	gear_sonic/utils/teleop/vr/button_state_machine.py	Edge-triggered button + chord state machine for VR controllers.
+A	gear_sonic/utils/teleop/vr/intent_decoder.py	X2 intent decoder: Quest 3 buttons + thumbsticks -> planner_cmd vocabulary.
+A	gear_sonic/utils/teleop/vr/joystick_mapping.py	Joystick deadzone, deflection mapping, and yaw accumulation for VR teleop.
+A	gear_sonic/utils/teleop/vr/pico_x2_reader.py	Pico (XRoboToolkit) input reader for the X2 teleop manager.
+A	gear_sonic/utils/teleop/vr/quest3_audio_prompts.py	Pre-recorded audio prompts for the Quest 3 calibration overlay.
+A	gear_sonic/utils/teleop/vr/quest3_reader.py	Quest 3 VR data reader via WebSocket.
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/audio_test.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/calibration_failed.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/calibration_saved.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/captured.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/estop_activating.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/estop_damping.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/mode_arm_manipulation.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/mode_locomotion.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/mode_off.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/mode_torso_locked.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/moved_too_much.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/recapture_arms_down.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/recapture_arms_forward.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/recapture_namaste.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/recapture_t_pose.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/record_save.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/record_start.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/show_arms_down.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/show_arms_forward.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/show_namaste.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/show_t_pose.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/torso_frozen.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/audio/torso_released.mp3	Quest 3 WebXR audio cue played in the headset on a state change (calibration, mode, e-stop).
+A	gear_sonic/utils/teleop/vr/quest3_webxr_app/index.html	Quest 3 Teleop — GEAR-SONIC
+A	gear_sonic/utils/teleop/vr/stick_smoother.py	Per-channel low-pass + slew-rate filter for Quest 3 stick inputs.
+A	gear_sonic/utils/teleop/vr/viewer_camera_cycler.py	Cycle the deploy MuJoCo viewer's fixed cameras via xdotool.
+A	gear_sonic/utils/teleop/vr_arm_teleop.py	VR-driven arm teleoperation for the X2 dataset recorder (legacy).
+A	gear_sonic/utils/teleop/vr_arm_teleop_v2.py	Stateless head-relative VR arm teleop using OperatorCalibration.
+A	gear_sonic/utils/teleop/wrist_bypass.py	Surgical wrist-target override for the four broken X2 wrist DOFs.
+A	gear_sonic/utils/teleop/x2_encoder_obs_builder.py	X2 encoder-observation builder (G1-style YAML + registry).
+A	gear_sonic/utils/teleop/x2_fk_wrist.py	Forward-kinematics helpers for X2 wrist trajectories from body_q_mj.
+A	gear_sonic/utils/teleop/x2_hand_retarget.py	Quest 3 controller / hand-tracking -> X2 OmniHand 10-DOF retargeting.
+A	gear_sonic/utils/teleop/x2_retarget_pipeline.py	Per-tick X2 retargeting pipeline used by both the recorder and the manager.
+A	gear_sonic/utils/teleop/x2_wrist_map.py	SMPL wrist rotation -> X2 wrist chain angles (yaw, pitch, roll).
+A	gear_sonic/utils/teleop/zmq/robot_pose_zmq.py	JSON-on-ZMQ helpers for the sim bridge's ``robot_pose`` telemetry topic.
+A	gear_sonic/utils/teleop/zmq/scene_state_zmq.py	JSON-on-ZMQ helpers for scene_state / scene_reset traffic between the deploy bridge and a scene-aware recorder (object poses / resets).
+A	gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py	Python receive-side decoder for the packed-binary ZMQ wire format.
+A	gear_sonic_deploy/configs/real_deploy_tuning/README.md	Real-Deploy Tuning Configs — YAML presets for the post-policy tuning knobs `deploy_x2.sh` exposes when
+A	gear_sonic_deploy/configs/real_deploy_tuning/_schema.yaml	Schema reference -- not a real preset.
+A	gear_sonic_deploy/configs/real_deploy_tuning/bigrun.yaml	BIGRUN rung 0 (demo candidate): walking_soft_kp + arm LPF DISABLED +
+A	gear_sonic_deploy/configs/real_deploy_tuning/conservative.yaml	First-run validation on the real X2 Ultra.
+A	gear_sonic_deploy/configs/real_deploy_tuning/expressive.yaml	Wide arm/wrist range, tight legs/waist/head, light output LPF.
+A	gear_sonic_deploy/configs/real_deploy_tuning/frozen_g1.yaml	BIGRUN rung 0 (demo candidate): walking_soft_kp + arm LPF DISABLED +
+A	gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0.yaml	S0 fresh-vendor faithful gains: every kp/kd scale 1.0 (vendor base
+A	gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0_inc_waistmc.yaml	Shipped default for the native dual-head set: waist PITCH kp 3.24x = the
+A	gear_sonic_deploy/configs/real_deploy_tuning/walk_101.yaml	Phase 3 DANCE-FLEX: loosened per-group target clamps (leg 1.0, waist 0.6,
+A	gear_sonic_deploy/configs/real_deploy_tuning/walking_recovery.yaml	Phase 1b: sagittal kd at FULL MC-match (ankle_pitch 3.31, knee 0.792,
+A	gear_sonic_deploy/configs/real_deploy_tuning/walking_recovery_loose.yaml	Phase 1b: sagittal kd at FULL MC-match (ankle_pitch 3.31, knee 0.792,
+A	gear_sonic_deploy/configs/sim_init_poses.yaml	gear_sonic_deploy/configs/sim_init_poses.yaml
+A	gear_sonic_deploy/configs/x2_stand_default_pose.yaml	Captured from MC STAND_DEFAULT mode.
+A	gear_sonic_deploy/data/idle_stand.x2m2	Pre-baked X2M2 motion (50 Hz joints + root quat) consumed by the deploy / pose watchdog.
+A	gear_sonic_deploy/deploy_x2.sh	X2 Ultra Deploy - Deployment Script
+A	gear_sonic_deploy/docker_x2/ARCHITECTURE.md	X2 Sim Architecture — How the X2 closed-loop MuJoCo simulation is split between **host** and
+A	gear_sonic_deploy/docker_x2/Dockerfile	X2 Ultra MuJoCo-sim container
+A	gear_sonic_deploy/docker_x2/README.md	X2 Docker container (sim + real robot) — Lightweight ROS 2 Humble + ONNX Runtime container for running the X2 Ultra
+A	gear_sonic_deploy/docker_x2/build_deploy_pkg.sh	One-shot in-container build of the deploy package.
+A	gear_sonic_deploy/docker_x2/docker-compose.real.yml	Real-robot DDS overlay for the X2 sim container.
+A	gear_sonic_deploy/docker_x2/docker-compose.yml	X2 Ultra MuJoCo-sim container for GR00T-WholeBodyControl.
+A	gear_sonic_deploy/docker_x2/enter_sim.sh	Build (idempotent) and drop into a shell inside the X2 sim container, with DDS isolated to loopback (ROS_LOCALHOST_ONLY=1, ROS_DOMAIN_ID=73 from docker-compose.yml).
+A	gear_sonic_deploy/docker_x2/get_x2_sonic_ready.sh	One-shot bring-up: build the X2 container in REAL-ROBOT mode AND run the deploy node in --dry-run, with operator-gated safety prompts the whole way.
+A	gear_sonic_deploy/models/README.md	Shipped default model set: `x2_sonic_v16ft8_45000` (native 3-encoder, dual-head) — The four ONNX graphs here (git-lfs) are the default the sim rituals (`sim_onnx_planner.sh --whole-body-teleop`, `simstack_local.sh`) and
+A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000.manifest.txt	x2_sonic_v16ft8_45000 exported 2026-09-17T12:05:21Z from model_step_045000.pt (md5 52d8ca591e34a6a15f140c22aab957b8) at 531c906 shipped set: gear_sonic_deploy/models/ (the _smpl.onnx gate-only graph and the .pt are not s
+A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000_dual.onnx	Shipped ONNX policy graph (git-lfs).
+A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1.onnx	Shipped ONNX policy graph (git-lfs).
+A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1_token.onnx	Shipped ONNX policy graph (git-lfs).
+A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx	Shipped ONNX policy graph (git-lfs).
+A	gear_sonic_deploy/scripts/bake_idle_stand_x2m2.py	Bake the planner's ``idle_stand`` primitive into an X2M2 binary.
+A	gear_sonic_deploy/scripts/codegen_x2_policy_parameters.py	Code-generate ``policy_parameters.hpp`` for the AgiBot X2 Ultra (31 DOF).
+A	gear_sonic_deploy/scripts/export_motion_for_deploy.py	Convert a motion-lib source (PKL) to the X2M2 binary format consumed by the C++ deploy package's ``PklMotionReference`` loader.
+A	gear_sonic_deploy/scripts/gen_policy_parameters.py	Generate policy_parameters.hpp's plant tables from a plant YAML.
+A	gear_sonic_deploy/scripts/pc2_bringup.sh	pc2_bringup.sh -- one-shot, idempotent installer for the X2 split-topology PC2 side (Jetson Orin NX).
+A	gear_sonic_deploy/scripts/pc2_pad_setup.sh	One-time gamepad (Xbox-class controller) enablement on the robot's PC2.
+A	gear_sonic_deploy/scripts/pc2_preflight.sh	PC2 (Jetson Orin NX) preflight script for the X2 split-topology deploy.
+A	gear_sonic_deploy/scripts/reexport_x2_onnx.sh	Re-export the fused X2 G1 deploy ONNX from a PyTorch checkpoint.
+A	gear_sonic_deploy/scripts/tuning_config_to_args.py	YAML real-deploy tuning config -> CLI args translator for deploy_x2.sh.
+A	gear_sonic_deploy/scripts/tuning_yaml_to_sim_flags.py	Convert a real_deploy_tuning/*.yaml into deploy_x2.sh SIM flags.
+A	gear_sonic_deploy/scripts/x2_debug_to_robot_pose_bridge.py	x2_debug_to_robot_pose_bridge.py -- laptop-side measured-yaw republisher.
+A	gear_sonic_deploy/scripts/x2_discover_network.sh	X2 split-topology network discovery.
+A	gear_sonic_deploy/scripts/x2_hand_zmq_to_aimdk_bridge.py	ZMQ pose -> AimDK HandCommandArray bridge for the X2 OmniHand.
+A	gear_sonic_deploy/scripts/x2_mc_escalator.py	x2_mc_escalator.py -- fire SetMcAction at high rate until accepted.
+A	gear_sonic_deploy/scripts/x2_motor_monitor.py	Continuous motor-state monitoring daemon for the X2 split-topology deploy.
+A	gear_sonic_deploy/scripts/x2_mujoco_ros_bridge.py	MuJoCo <-> ROS 2 bridge for the AgiBot X2 Ultra.
+A	gear_sonic_deploy/scripts/x2_pc2_camera_zmq_publisher.py	Bridge AgiBot HAL camera ROS topics → ``ComposedCameraClientSensor`` ZMQ.
+A	gear_sonic_deploy/scripts/x2_pc2_cameras.sh	x2_pc2_cameras.sh -- inspect / restart-hal / grab samples for the four head cameras that hang off PC2 (the Jetson Orin NX).
+A	gear_sonic_deploy/scripts/x2_pc2_daemons.sh	X2 split-topology PC2 daemon lifecycle wrapper.
+A	gear_sonic_deploy/scripts/x2_pose_watchdog.py	x2_pose_watchdog.py -- PC2-side single-input fallback watchdog.
+A	gear_sonic_deploy/scripts/x2_preflight.py	Gantry-aware safety preflight for the X2 Ultra whole-body deploy.
+A	gear_sonic_deploy/src/common/CMakeLists.txt	sonic_common -- robot-agnostic deploy-time utilities shared across robots.
+A	gear_sonic_deploy/src/common/README.md	sonic_common` — robot-agnostic deploy-time utilities — This directory is the long-term home for C++ headers and source files that
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/CMakeLists.txt	agi_x2_deploy_onnx_ref -- AgiBot X2 Ultra ONNX deploy harness (Phase 3).
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/README.md	agi_x2_deploy_onnx_ref` — Reference real-robot deploy harness for the AgiBot X2 Ultra (31 DOF).
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/config/obs_config_x2_ultra.yaml	Observation layout for the AgiBot X2 Ultra g1+g1_dyn fused ONNX policy.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/aimdk_io.hpp	@file aimdk_io.hpp * @brief ROS 2 IO wrapper for the X2 Ultra deploy.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/deploy_logger.hpp	@file deploy_logger.hpp * @brief Lightweight per-tick CSV logger for X2 deploy.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/flight_recorder.hpp	@file flight_recorder.hpp * @brief Pre-trigger ring buffer ("black box") dumped when an e-stop fires.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/head_bypass.hpp	@file head_bypass.hpp * @brief Surgical override of SONIC's head targets from the ZMQ reference.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/math_utils.hpp	@file math_utils.hpp * @brief Minimal quaternion / vector helpers used by the X2 obs builder.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/onnx_actor.hpp	@file onnx_actor.hpp * @brief Thin C++ wrapper around the fused X2 g1+g1_dyn ONNX session.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/plant_loader.hpp	@file plant_loader.hpp * @brief Loads the X2 actuator plant (armature / effort / PD / action scale) * from gear_sonic/config/robot_plant/x2_ultra_<name>.yaml at RUNTIME.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/policy_parameters.hpp	@file policy_parameters.hpp * @brief Motor constants, PID gains, joint mappings, action scales, and default * standing angles for the AgiBot X2 Ultra 31-DOF policy.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/proprioception_buffer.hpp	@file proprioception_buffer.hpp * @brief 990-D ring-buffered proprioception, IsaacLab CircularBuffer semantics.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/reference_motion.hpp	@file reference_motion.hpp * @brief Reference-trajectory source for the 680-D tokenizer obs.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/safety.hpp	@file safety.hpp * @brief Safety scaffolding for first-real-robot bring-up.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/smpl_obs.hpp	@file smpl_obs.hpp * @brief In-deploy SMPL observation builder for the native whole-body head.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/stand_pose_loader.hpp	@file stand_pose_loader.hpp * @brief Loads the captured MC STAND_DEFAULT pose from a YAML config file.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/tokenizer_obs.hpp	@file tokenizer_obs.hpp * @brief 680-D tokenizer observation builder.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/wrist_bypass.hpp	@file wrist_bypass.hpp * @brief Surgical override of SONIC's wrist target for the 4 broken DOFs.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/zmq/smpl_intent_source.hpp	@file smpl_intent_source.hpp * @brief ZMQ subscriber for the laptop's ``pico_intent`` stream, consumed * directly by the deploy (2026-09-04): replaces the PC2 Python token * service.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/zmq/zmq_debug_publisher.hpp	@file zmq_debug_publisher.hpp * @brief Packed-binary ZMQ PUB sink for the X2 deploy's ``x2_debug`` telemetry.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/zmq/zmq_packed_message_subscriber.hpp	@file zmq_packed_message_subscriber.hpp * @brief ZeroMQ SUB client for receiving "packed" binary messages.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/zmq/zmq_pose_input_source.hpp	@file zmq_pose_input_source.hpp * @brief ReferenceMotion drop-in that pulls 31-DOF body refs from a ZMQ feed.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/zmq/zmq_resume_subscriber.hpp	@file zmq_resume_subscriber.hpp * @brief Tiny ZMQ SUB helper for the operator's "resume from SAFE_IDLE" chord.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/package.xml	ROS 2 package manifest for the X2 deploy node (ament_cmake; depends on rclcpp, sensor_msgs, aimdk_msgs).
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/aimdk_io.cpp	Subscribers (one per joint group + IMU).
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/deploy_logger.cpp	action_il is in IL order, so we don't tag with mj joint names; just index it.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/onnx_actor.cpp	Expected input width for the X2 g1+g1_dyn fused ONNX: tokenizer(680) // proprioception(990) = 1670
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/proprioception_buffer.cpp	Zero-fill rings; primed_=false is the real "empty" signal -- the zeros are never read out before being overwritten because GetFlat() is only meaningful after the first Append().
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/reference_motion.cpp	StandStillReference
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/safety.cpp	SoftStartRamp
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/smpl_intent_source.cpp	timeout_ms=
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/smpl_obs.cpp	scipy: rot.apply([1,0,0]) -> atan2(v.y, v.x) == yaw of the body-X axis
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/tokenizer_obs.cpp	Pre-compute the normalizing rotation's conjugate (xyzw), used for the relative rotation norm^-1 * future across all 10 future frames.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/x2_deploy_onnx_ref.cpp	@file x2_deploy_onnx_ref.cpp * @brief Reference real-robot deploy harness for the AgiBot X2 Ultra.
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/src/zmq_pose_input_source.cpp	Pull the publisher header into the same TU so its compile errors surface in the offline syntax-check build (the ZmqDebugPublisher itself lives header-only; without this include it would only be checked against
+A	gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/test/test_obs_builder.cpp	Pure-CPU unit test for the X2 obs builders -- no ROS 2, no ONNX runtime.
+A	gear_sonic_deploy/thirdparty/aimdk_msgs/.gitignore	AgiBot SDK content is fetched at setup time — never committed
+A	gear_sonic_deploy/thirdparty/aimdk_msgs/README.md	aimdk_msgs (bring your own — from AgiBot's official SDK) — The deploy node and the docker sim image build against AgiBot's `aimdk_msgs
+A	install_scripts/install_quest3.sh	install_quest3.sh Sets up the gear_sonic_teleop venv for Quest 3 VR teleop.
+A	install_scripts/setup_x2.sh	setup_x2.sh — zero-friction setup for the X2 SONIC sim + deploy stacks.
+A	motionbricks/MODEL_REGISTRY.md	Kplanner model registry (X2 planner: vqvae / root / pose) — Why this exists: checkpoints accumulate across training eras in
+A	motionbricks/motionbricks/data/clip_split.py	Long-clip windowing for X2 planner training data.
+A	motionbricks/motionbricks/data/x2_category_dataset.py	PyTorch dataset: X2 motion-lib PKL(s) -> MotionBricks global motion features.
+A	motionbricks/motionbricks/data/x2_loco_filters.py	Filter X2 motion-lib keys to walk-and-turn locomotion only.
+A	motionbricks/motionbricks/data/x2_pkl_to_motion.py	Convert X2 motion-lib PKL clips to MotionBricks ``input_tensor_dict`` tensors.
+A	motionbricks/motionbricks/helper/mujoco_helper_x2.py	X2 Ultra MuJoCo qpos converter (38 cols: 7 root + 31 hinge).
+A	motionbricks/motionbricks/motion_backbone/inference/load_g1_planner.py	Load G1 MotionBricks reference checkpoints into a ready-to-stream NeuralPlannerCore.
+A	motionbricks/motionbricks/motion_backbone/inference/load_x2_planner.py	Load X2 MotionBricks checkpoints into a ready-to-stream NeuralPlannerCore.
+A	motionbricks/motionbricks/motion_backbone/inference/neural_planner.py	Robot-agnostic streaming wrapper around motion_inference for velocity-intent control.
+A	motionbricks/motionbricks/motionlib/core/skeletons/x2.py	AgiBot X2 Ultra — MuJoCo body order matches gear_sonic ``MUJOCO_JOINT_NAMES`` plus pelvis root and two dummy toe joints (same foot-contact pattern as G1Skeleton34).
+A	motionbricks/scripts/build_feature_cache_x2.py	Pre-compute the X2 MotionBricks FK feature cache in parallel.
+A	motionbricks/scripts/build_frozen_core_pair_cache.py	Build the S1 paired-chunk training cache (frozen-core stage S1, build step 1).
+A	motionbricks/scripts/build_x2_planner_clips.py	Bake the X2 mode-template clip library used by the pose-template inference path.
+A	motionbricks/scripts/build_x2_skeleton_assets.py	Build X2 skeleton assets, motion stats, and bootstrap hparams.yaml for VQVAE/pose/root.
+A	motionbricks/scripts/export_g1core_x2_planner_onnx.py	Export the FROZEN G1 stock planner wrapped in analytic Phi heads as an X2-contract ONNX graph (frozen-core S0).
+A	motionbricks/scripts/export_x2_planner_onnx.py	Export the X2 kinematic planner (MotionBricks NeuralPlannerCore) to ONNX.
+A	motionbricks/scripts/smoke_test_x2_inference.py	End-to-end smoke test for the X2 MotionBricks pipeline.
+A	motionbricks/scripts/train_frozen_core_heads.py	Train the S1 residual heads (LP-1 linear probe / S1-a MLP residuals).
+A	motionbricks/scripts/train_pose_x2.py	Train MotionBricks pose backbone on X2 motion-lib clips.
+A	motionbricks/scripts/train_root_x2.py	Train MotionBricks root backbone on X2 motion-lib clips.
+A	motionbricks/scripts/train_vqvae_x2.py	Train MotionBricks VQVAE on X2 motion-lib clips (default = full corpus, no filter).
+A	requirements-teleop-record.txt	Minimal pip install for the X2 VR teleop + LeRobot dataset recorder.
+A	requirements-x2.txt	X2 lean-cut requirements (validated 2026-07-28 on Ubuntu / Python 3.10.19).
+A	tools/build_demo_bank_from_upstream.py	Build the X2 motion banks the launchers expect on a clean clone.
+A	tools/build_demo_bank_from_upstream.sh	Build the X2 motion banks (pad/dance bank = the shipped X2 MC stock gestures; planner primitives synthesized).
+A	tools/check_docs.py	Check that every path / command target mentioned in the X2 docs exists.
+A	tools/check_x2_ownership.py	Ownership gate: every tracked file is upstream or listed in X2_FILES.txt with a purpose; --write regenerates the list from the diff against the upstream base.
+A	tools/git-hooks/install.sh	Install the security pre-commit hook into this clone (idempotent; chains any existing pre-commit hook).
+A	tools/git-hooks/pre-commit-security.sh	Pre-commit security gate: blocks commits whose STAGED changes contain emails, credentials, tokens, or account identifiers.
+A	x2_pc2/PORT_REGISTRY.md	PORT REGISTRY — single source of truth for every ZMQ port in the stack — **Rule: no new socket without a row here first.** This file exists because of
+A	x2_pc2/install_camera_bridge_service.sh	Install/refresh the X2 camera bridge as a boot service ON PC2.
+A	x2_pc2/install_pad_autopair_service.sh	Install/refresh the boot daemon that pairs the gamepad and fires the ignition ritual on the pad chord: x2_pc2/x2-pad-autopair.service -> x2_pad_autopair.py --start-cmd ritual_start_demo.sh.
+A	x2_pc2/pad_bindings.env	SINGLE SOURCE OF TRUTH for gamepad semantics -- sourced by BOTH the robot ritual (x2_pc2/ritual_start_demo.sh / ritual_start_sonic.sh) and the local sim stack (gear_sonic/scripts/simstack_local.sh), so the pad FEELS the
+A	x2_pc2/pc2_live_manifest.sh	What the robot ACTUALLY runs: parse PC2's ritual scripts for every python script / env file / model they launch or source, and print md5 + mtime of those exact files, next to the laptop-side counterpart's md5 when one is
+A	x2_pc2/push_manifest.txt	push_to_pc2.sh manifest -- the DEFAULT file set for a pad-ritual PC2.
+A	x2_pc2/push_manifest_incumbent.txt	MODEL-ONLY manifest: swap the sonic policy + planner template slots in place.
+A	x2_pc2/push_manifest_kplanner_only.txt	kplanner-only follow-up: ship the planner daemon alone
+A	x2_pc2/push_manifest_ritual_only.txt	single-file follow-up: the PC2-resident deploy launcher alone
+A	x2_pc2/push_manifest_wholebody_dual.txt	push_manifest_wholebody_dual.txt -- native dual-head whole-body ship.
+A	x2_pc2/push_to_pc2.sh	THE sanctioned path for pushing planner changes to the robot (PC2).
+A	x2_pc2/ritual_start_demo.sh	LAPTOP-FREE demo ignition.
+A	x2_pc2/ritual_start_sonic.sh	LAPTOP-FREE demo ignition.
+A	x2_pc2/robot_env.env.frozen.template	ROBOT ENVIRONMENT -- the single source of truth for BOTH the robot and sim.
+A	x2_pc2/robot_env.env.template	ROBOT ENVIRONMENT -- the single source of truth for BOTH the robot and sim.
+A	x2_pc2/start_x2_deploy_ritual.sh	PC2-resident deploy launcher for GAMEPAD RITUAL ignition.
+A	x2_pc2/start_x2_hand_bridge.sh	autogenerated by x2_pc2_daemons.sh for tmux session: x2_hand_bridge regenerated on every 'start'; edit the daemon script, not this file
+A	x2_pc2/start_x2_motor_monitor.sh	autogenerated by x2_pc2_daemons.sh for tmux session: x2_motor_monitor regenerated on every 'start'; edit the daemon script, not this file
+A	x2_pc2/start_x2_pose_watchdog_local.sh	Per-run log stamp.
+A	x2_pc2/x2-camera-bridge.service	Boot service on PC2 (Jetson).
+A	x2_pc2/x2-pad-autopair.service	Paths are the default PC2_PREFIX; x2_pc2/install_pad_autopair_service.sh rewrites them when the install prefix differs.
+
+M	.gitattributes	Machine learning models and data files
+M	.gitignore	Byte-compiled / optimized / DLL files
+M	README.md	GR00T-WholeBodyControl — <img src="media/groot_wbc.png" width="800" alt="GEAR SONIC Header">
+M	download_from_hf.py	Download GEAR-SONIC model checkpoints and training data from Hugging Face Hub.
+M	gear_sonic/camera/composed_camera.py	Composed camera server — orchestrates multiple camera drivers.
+M	gear_sonic/data/robot_model/instantiation/__init__.py	Robot model instantiation helpers (G1, X2 Ultra).
+M	gear_sonic/data/video_writer.py	Keep a handle so stop() can join the worker.
+M	gear_sonic/data_process/convert_soma_csv_to_motion_lib.py	Convert SOMA retargeter CSV/PKL data to motion_lib format for SONIC training.
+M	gear_sonic/envs/manager_env/mdp/commands.py	Motion tracking command terms for humanoid whole-body control RL environments.
+M	gear_sonic/envs/manager_env/mdp/events.py	Event functions for domain randomization and environment resets in RL training.
+M	gear_sonic/envs/manager_env/mdp/observations.py	Observation functions for the manager-based RL environment MDP.
+M	gear_sonic/envs/manager_env/mdp/rewards.py	Reward functions for the manager-based RL environment MDP.
+M	gear_sonic/envs/manager_env/modular_tracking_env_cfg.py	Parse the USD text format for omni:lensdistortion:opencvPinhole attributes
+M	gear_sonic/envs/manager_env/robots/__init__.py	Re-export robot configs for backward compatibility.
+M	gear_sonic/envs/wrapper/manager_env_wrapper.py	Import joint index functions (single source of truth)
+M	gear_sonic/eval_agent_trl.py	you may not use this file except in compliance with the License.
+M	gear_sonic/pyproject.toml	Teleop: minimal deps for running ZMQ-based teleop pico_manager_thread_server.py + visualization (pyzmq, pyvista, pinocchio FK)
+M	gear_sonic/scripts/pico_manager_thread_server.py	Recommended Command Line Arguments: # With VR3 PT visualization (by --vis_vr3pt) and optional SMPL body visualization (by --vis_smpl) # If you want to enable waist tracking in the VR3 PT visualization, please add --waist
+M	gear_sonic/train_agent_trl.py	you may not use this file except in compliance with the License.
+M	gear_sonic/trl/callbacks/im_eval_callback.py	Get the motion keys and number of motions
+M	gear_sonic/trl/losses/token_losses.py	Loss functions for token-based models.
+M	gear_sonic/trl/trainer/ppo_trainer.py	PPO trainer adapted from HuggingFace TRL for humanoid whole-body control.
+M	gear_sonic/trl/utils/order_converter.py	IsaacLab <-> MuJoCo ordering conversion utilities.
+M	gear_sonic/utils/motion_lib/motion_lib_base.py	Frames of robot-vs-SMPL length disagreement attributable to independent resample rounding (the robot track is resampled to target_fps, smpl_joints is used at its native rate).
+M	gear_sonic/utils/motion_lib/torch_humanoid_batch.py	import logging
+M	gear_sonic/utils/mujoco_sim/base_sim.py	MuJoCo simulation environment and loop for the G1 (and H1) humanoid robots.
+M	gear_sonic/utils/mujoco_sim/unitree_sdk2py_bridge.py	Bridge between Unitree SDK2 DDS topics and the MuJoCo simulation.
+M	install_scripts/install_pico.sh	install_pico.sh Sets up the gear_sonic_teleop venv for PICO VR teleop on any x86_64 or arm64 machine (desktop, laptop, or G1 onboard).
+M	motionbricks/.gitignore	Python
+M	motionbricks/README.md	MotionBricks: Scalable Real-Time Motions with Modular Latent Generative Model and Smart Primitives — <a href="https://nvlabs.github.io/motionbricks"><img src="https://img.shields.io/badge/Project-Page-blue" alt="Project
+M	motionbricks/motionbricks/motion_backbone/demo/clips.py	get the actual data index from the clip_id
+M	motionbricks/motionbricks/motion_backbone/models/pose_model.py	the other key args here: most of them for compatibility only and won't be used at all
+M	motionbricks/motionbricks/motionlib/core/skeletons/__init__.py	flake8: noqa
+M	pyproject.toml	Root pyproject.toml — tooling configuration only.

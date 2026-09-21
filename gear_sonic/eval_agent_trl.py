@@ -499,30 +499,19 @@ def main(override_config: omegaconf.OmegaConf):
 
         if "tokenizer" in example_obs_dict and has_encoders:
 
-            inference_helpers.export_universal_token_module_as_onnx(
-                model.policy.actor_module,
-                encoder_name="smpl",
-                decoder_name="g1_dyn",
-                path=exported_policy_path,
-                exported_model_name=exported_onnx_name.replace(".onnx", "_smpl.onnx"),
-                batch_size=1,
-            )
-            inference_helpers.export_universal_token_module_as_onnx(
-                model.policy.actor_module,
-                encoder_name="g1",
-                decoder_name="g1_dyn",
-                path=exported_policy_path,
-                exported_model_name=exported_onnx_name.replace(".onnx", "_g1.onnx"),
-                batch_size=1,
-            )
-            inference_helpers.export_universal_token_module_as_onnx(
-                model.policy.actor_module,
-                encoder_name="teleop",
-                decoder_name="g1_dyn",
-                path=exported_policy_path,
-                exported_model_name=exported_onnx_name.replace(".onnx", "_teleop.onnx"),
-                batch_size=1,
-            )
+            available_encoders = list(model.policy.actor_module.encoder_input_features.keys())
+            logger.info(f"Exporting ONNX for available encoders: {available_encoders}")
+            for encoder_name in available_encoders:
+                inference_helpers.export_universal_token_module_as_onnx(
+                    model.policy.actor_module,
+                    encoder_name=encoder_name,
+                    decoder_name="g1_dyn",
+                    path=exported_policy_path,
+                    exported_model_name=exported_onnx_name.replace(
+                        ".onnx", f"_{encoder_name}.onnx"
+                    ),
+                    batch_size=1,
+                )
 
             inference_helpers.export_universal_token_encoders_as_onnx(
                 model.policy.actor_module,

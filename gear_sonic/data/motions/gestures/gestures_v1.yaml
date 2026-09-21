@@ -1,0 +1,73 @@
+# Live-trigger gesture catalog for the Quest3 planner stack.
+# Loaded once at merger startup; `play_gesture <name>` resolves
+# names against this file.
+#
+# Add a new gesture by appending a row below, restart the merger.
+# Each `source` path is resolved relative to the repo root. Every entry
+# below is an AgiBot Motion-Controller stock gesture captured on the X2
+# (gear_sonic/data/motions/x2_recorded/mc_gestures/, 30 fps, one motion
+# key per file named after the file). No third-party motion clips ship.
+name: x2_ultra_gestures_v1
+gestures:
+  - name: wave_right
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/right_wave_001.pkl
+    motion_key: right_wave_001
+    start_frame: 0
+    n_frames: null
+
+  - name: wave_left
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/left_wave_001.pkl
+    motion_key: left_wave_001
+    start_frame: 0
+    n_frames: null
+
+  - name: bow
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/bow_001.pkl
+    motion_key: bow_001
+    start_frame: 0
+    n_frames: null
+
+  - name: clap
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/clap_001.pkl
+    motion_key: clap_001
+    start_frame: 0
+    n_frames: null
+
+  - name: salute
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/salute_001.pkl
+    motion_key: salute_001
+    start_frame: 0
+    n_frames: null
+
+  - name: heart
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/both_heart_001.pkl
+    motion_key: both_heart_001
+    start_frame: 0
+    n_frames: null
+
+  - name: high_five_right
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/right_five_001.pkl
+    motion_key: right_five_001
+    start_frame: 0
+    n_frames: null
+
+  - name: thinking
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/thinking_001.pkl
+    motion_key: thinking_001
+    start_frame: 0
+    n_frames: null
+
+  # Raise and HOLD (merger republishes the last frame until stop / new play),
+  # and the matching lower back to stance.
+  - name: raise_right_hold
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/right_raise_001.pkl
+    motion_key: right_raise_001
+    start_frame: 0
+    n_frames: 60
+    hold_after: true
+  - name: raise_right_down
+    source: gear_sonic/data/motions/x2_recorded/mc_gestures/right_raise_001.pkl
+    motion_key: right_raise_001
+    start_frame: 60
+    n_frames: null
+    # hold_after omitted -> default false -> auto-handback to kplanner

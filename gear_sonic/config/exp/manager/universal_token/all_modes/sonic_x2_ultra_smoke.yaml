@@ -1,0 +1,18 @@
+# @package _global_
+# SONIC X2 Ultra smoke test: the FULL 3-encoder config (g1 motion tracking, teleop,
+# SMPL) with a short schedule. It inherits sonic_x2_ultra.yaml so the smoke exercises
+# exactly the network, observation terms and data contract of a real run, including
+# the SMPL sidecar join -- a missing or zero-filled sidecar set fails here instead of
+# training the smpl encoder on nothing (SMPL_MOTION_DIR is required).
+#
+#   MOTION_FILE=<corpus.pkl> SMPL_MOTION_DIR=<sidecar dir> \
+#   python gear_sonic/train_agent_trl.py --config-name=base \
+#       +exp=manager/universal_token/all_modes/sonic_x2_ultra_smoke ++num_envs=2 ++headless=True
+
+defaults:
+  - /exp/manager/universal_token/all_modes/sonic_x2_ultra
+  - _self_
+
+algo:
+  config:
+    num_learning_iterations: 200

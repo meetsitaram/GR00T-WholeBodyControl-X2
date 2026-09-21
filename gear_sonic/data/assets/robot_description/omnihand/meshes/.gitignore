@@ -1,0 +1,7 @@
+# Stock OmniHand meshes are fetched at setup — only our custom clipped
+# wrist meshes are committed.
+*
+!README.md
+!.gitignore
+!left_wrist_roll_clipped_link.STL
+!right_wrist_roll_clipped_link.STL

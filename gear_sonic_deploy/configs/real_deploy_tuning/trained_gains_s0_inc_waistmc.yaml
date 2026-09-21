@@ -1,0 +1,82 @@
+# trained_gains_s0_inc_waistmc.yaml -- SHIPPED DEFAULT for the native
+# dual-head set (gear_sonic_deploy/models/x2_sonic_v16ft8_45000_*): the
+# sim rituals (sim_onnx_planner.sh / simstack_local.sh) and the robot ritual
+# (x2_pc2/robot_env.env.template) pick it when X2_RITUAL_TUNING /
+# SIM_TUNING_YAML are unset.
+#
+# WHAT IT CHANGES vs trained_gains_s0.yaml: waist PITCH only.
+#   kp: 2.00 (waist_pr) x 1.62 (pitch) = 3.24x trained = the vendor MC's
+#       waist stiffness, 40 N*m/rad (the vendor plant had cut the deploy's
+#       waist to ~24.7 N*m/rad).
+#   kd: 5.51 (waist_pr) x 1.27 (pitch) = 7.0x trained = 5.5 abs (MC 5.0),
+#       so the damping ratio is kept at the stiffer kp.
+#   roll, hips, knees, ankles: untouched (trained_gains_s0 values).
+# WHY: under crouch / lean pieces the waist used to rest on its pitch stop
+# (waist stop-share ~26 % of ticks, deepest excursions ~-450 mNm-scale
+# events); holding the MC stiffness roughly halves the stop events and
+# cuts the stop-share to ~10 % in the sim battery. Stiffening ROLL as well
+# produced a 4 Hz idle ring in sim -- pitch-only + matched damping avoided it.
+# CAVEATS: the waist now holds ~24 N*m through every lean instead of resting
+# on the stop, so watch actuator heat on long sessions; falls on the hard
+# crouch / lean pieces are unchanged by this preset. Gantry feel-test a new
+# checkpoint under it before a free-standing session.
+#
+# Everything else (clamps / LPF / ramps / other gains) is trained_gains_s0.
+
+description: |
+  Shipped default for the native dual-head set: waist PITCH kp 3.24x = the
+  vendor MC's waist stiffness (40 N*m/rad; the vendor plant had cut the
+  deploy's waist to 24.7), pitch kd 1.27x to keep the damping ratio, roll
+  untouched. Everything else trained_gains_s0. Gantry feel-test a new
+  checkpoint under it before a free-standing session.
+
+action_clip:    20.0
+max_target_dev:        0.30
+max_target_dev_leg:    0.70
+# 0.45 KEPT — but for a different reason per lineage (2026-08-31):
+#   S0-era models: 0.45 > pitch's whole range = pitch unprotected (the
+#     snap-back geometry). Their real fix was the codec, not this knob.
+#   S1+ (waist range-map): the CODEC bounds pitch commands to rated
+#     (±0.314) structurally — this knob's job is ROLL headroom, and S1's
+#     roll map legitimately commands up to ~0.49. A 0.35 experiment
+#     TRUNCATED S1's lateral corrections -> sustained sideways limit
+#     cycle in sim (operator-caught, reverted within the hour).
+# Per-joint clamp (§22.6 C++ patch: pitch 0.28/roll 0.45/yaw 0.45)
+# remains the proper fix for pre-S1 models; for S1+ it is belt-and-braces.
+max_target_dev_waist:  0.45
+max_target_dev_arm:    2.00
+max_target_dev_head:   0.50
+ramp_seconds:    2.0
+return_seconds:  2.0
+tilt_cos:       -0.3
+target_lpf_hz:        8.0
+target_lpf_hz_leg:    16.0
+target_lpf_hz_waist:  0.0
+target_lpf_hz_arm:    0.0
+kp_scale_ankle_pitch: 1.00
+kp_scale_ankle_roll:  1.00
+kp_scale_knee:        1.00
+kp_scale_waist_yaw:   1.00
+# WAIST TRAINING-WHEELS (operator-agreed 2026-08-31): bigrun-strength
+# waist armor for YOUNG S-lineage checkpoints. armA never snapped despite a
+# WORSE pitch map because 15k iterations of maturity + this stiff, damped
+# servo cushioned the frozen core's reactive spikes; 2k-iteration
+# checkpoints at unity waist gains snap (sim gesture test: pitch target
+# railed 40.8%, 8 snaps/40s). Unity waist gains = the GRADUATION test at
+# maturity (re-test in sim at 5k/10k), not the daily driver at 2k.
+kp_scale_waist_pr:    2.00
+kp_scale_waist_pitch: 1.62   # pitch only: 2.0 x 1.62 = 3.24 = MC waist kp 40 N*m/rad; roll stays 2.0
+kd_scale_ankle_pitch: 1.00
+kd_scale_ankle_roll:  1.00
+kd_scale_knee:        1.00
+kd_scale_hip:         1.00
+kd_scale_waist_yaw:   1.00
+# bigrun's damping restored (operator call 2026-08-31): the 0.62 Hz
+# whole-body sway is DRIVEN by rail-to-rail waist-roll targets (lead-lag:
+# target leads base+knees by 80 ms, corr 0.9) — the frozen core's lateral
+# weight-shift habit ringing through an underdamped waist servo. armA
+# (15k iters) suppressed the habit; young S0/S1 (2k) have not yet. Extra
+# kd only damps transmission — it deviates from trained gains, but is the
+# proven anti-ring knob while training matures.
+kd_scale_waist_pr:    5.51
+kd_scale_waist_pitch: 1.27   # damping ratio kept at the stiffer pitch kp: 5.51 x 1.27 = 7.0 (abs 5.5; MC 5.0)

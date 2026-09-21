@@ -1,0 +1,54 @@
+# push_manifest_wholebody_dual.txt -- native dual-head whole-body ship.
+# FILES ONLY; the deploy C++ goes through pc2_bringup.sh (rsync + colcon on
+# the Orin), not this list.
+# <local path relative to repo root (or ${VAR}-prefixed absolute)>   <absolute PC2 path>
+gear_sonic/scripts/pc2_kplanner_onnx.py                      ${PC2_PREFIX}/pc2_kplanner_onnx.py
+gear_sonic_deploy/scripts/x2_pose_watchdog.py                ${PC2_PREFIX}/gear_sonic_deploy/scripts/x2_pose_watchdog.py
+gear_sonic/scripts/pc2_pico_token_service.py                 ${PC2_PREFIX}/gear_sonic/scripts/pc2_pico_token_service.py
+# gear_sonic python modules the PC2 scripts import (also staged by pc2_bringup.sh step 7b;
+# listed here so an incremental push keeps them current). Both prefixes: ${PC2_PREFIX}/gear_sonic
+# (token service sys.path) and ${PC2_PREFIX}/planner_stack/gear_sonic (kplanner PYTHONPATH).
+gear_sonic/__init__.py                                 ${PC2_PREFIX}/gear_sonic/__init__.py
+gear_sonic/__init__.py                                 ${PC2_PREFIX}/planner_stack/gear_sonic/__init__.py
+gear_sonic/utils/__init__.py                           ${PC2_PREFIX}/gear_sonic/utils/__init__.py
+gear_sonic/utils/__init__.py                           ${PC2_PREFIX}/planner_stack/gear_sonic/utils/__init__.py
+gear_sonic/utils/teleop/estop_gesture.py               ${PC2_PREFIX}/estop_gesture.py
+gear_sonic/utils/teleop/estop_gesture.py               ${PC2_PREFIX}/gear_sonic/utils/teleop/estop_gesture.py
+gear_sonic/utils/teleop/smpl_obs.py                    ${PC2_PREFIX}/gear_sonic/utils/teleop/smpl_obs.py
+gear_sonic/utils/teleop/smpl_obs.py                    ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/smpl_obs.py
+gear_sonic/utils/teleop/x2_hand_retarget.py            ${PC2_PREFIX}/gear_sonic/utils/teleop/x2_hand_retarget.py
+gear_sonic/utils/teleop/x2_hand_retarget.py            ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/x2_hand_retarget.py
+gear_sonic/utils/teleop/zmq/zmq_planner_sender.py      ${PC2_PREFIX}/gear_sonic/utils/teleop/zmq/zmq_planner_sender.py
+gear_sonic/utils/teleop/zmq/zmq_planner_sender.py      ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/zmq/zmq_planner_sender.py
+gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py   ${PC2_PREFIX}/gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py
+gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py   ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py
+gear_sonic/utils/teleop/zmq/zmq_poller.py              ${PC2_PREFIX}/gear_sonic/utils/teleop/zmq/zmq_poller.py
+gear_sonic/utils/teleop/zmq/zmq_poller.py              ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/zmq/zmq_poller.py
+gear_sonic/utils/pose_pipeline/__init__.py             ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/__init__.py
+gear_sonic/utils/pose_pipeline/__init__.py             ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/__init__.py
+gear_sonic/utils/pose_pipeline/wire.py                 ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/wire.py
+gear_sonic/utils/pose_pipeline/wire.py                 ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/wire.py
+gear_sonic/utils/pose_pipeline/wire.py                 ${PC2_PREFIX}/ws/src/gear_sonic/utils/pose_pipeline/wire.py
+gear_sonic/utils/pose_pipeline/fallback.py             ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/fallback.py
+gear_sonic/utils/pose_pipeline/fallback.py             ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/fallback.py
+gear_sonic/utils/pose_pipeline/fallback.py             ${PC2_PREFIX}/ws/src/gear_sonic/utils/pose_pipeline/fallback.py
+gear_sonic/utils/pose_pipeline/clamp.py                ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/clamp.py
+gear_sonic/utils/pose_pipeline/clamp.py                ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/clamp.py
+gear_sonic/utils/pose_pipeline/arbitrate.py            ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/arbitrate.py
+gear_sonic/utils/pose_pipeline/arbitrate.py            ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/arbitrate.py
+x2_pc2/start_x2_deploy_ritual.sh                             ${PC2_PREFIX}/start_x2_deploy_ritual.sh
+x2_pc2/robot_env.env                                         ${PC2_PREFIX}/robot_env.env
+# MODELS: the SHIPPED default set (git-lfs, tracked -> gate 2 "committed"
+# applies; `git lfs pull` first if they are pointer files). The dual graph and
+# its _g1 pose-graph sibling are cut from ONE checkpoint (the ritual checks
+# codec_fingerprint and refuses a mix); the token pair rides along so the
+# legacy token path is a one-line X2_RITUAL_MODEL change.
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_dual.onnx             ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_dual.onnx
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1.onnx               ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_g1.onnx
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1_token.onnx         ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_g1_token.onnx
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx   ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx
+# Bring-your-own alternative (MODELS.md): keep the <name>_dual.onnx /
+# <name>_g1.onnx naming (the ritual derives the sibling by suffix) and point
+# X2_RITUAL_MODEL in robot_env.env at the new dual graph.
+#${X2_MODELS}/<your_model>_dual.onnx                         ${PC2_PREFIX}/policies/<your_model>_dual.onnx
+#${X2_MODELS}/<your_model>_g1.onnx                           ${PC2_PREFIX}/policies/<your_model>_g1.onnx

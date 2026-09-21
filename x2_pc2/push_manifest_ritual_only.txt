@@ -1,0 +1,2 @@
+# single-file follow-up: the PC2-resident deploy launcher alone
+x2_pc2/start_x2_deploy_ritual.sh   ${PC2_PREFIX}/start_x2_deploy_ritual.sh

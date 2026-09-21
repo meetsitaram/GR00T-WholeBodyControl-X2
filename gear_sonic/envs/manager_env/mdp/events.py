@@ -30,6 +30,10 @@ class EventCfg:
 
     randomize_rigid_body_mass = None
 
+    # reset - per-episode actuator PD (KP/KD) randomization (IsaacLab built-in
+    # mdp.events:randomize_actuator_gains). Wired into events/tracking/level0_4_pd.yaml.
+    randomize_actuator_gains = None
+
 
 def randomize_joint_default_pos(
     env: ManagerBasedEnv,

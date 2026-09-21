@@ -1,0 +1,16 @@
+feet_impact_vel:
+  _target_: isaaclab.managers.RewardTermCfg
+  func: gear_sonic.envs.manager_env.mdp:feet_impact_vel_penalty
+  # Penalize downward foot speed^2 at the touchdown tick only (foot slam on
+  # recovery steps / dance moves). Start small: with tracking budget ~+7 and a
+  # hard landing ~1 m/s on one foot, -0.05 * 1.0 = ~0.7% of budget per event.
+  weight: -0.05
+  params:
+    sensor_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "contact_forces"
+      body_names: ["left_ankle_roll_link", "right_ankle_roll_link"]
+    asset_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "robot"
+      body_names: ["left_ankle_roll_link", "right_ankle_roll_link"]

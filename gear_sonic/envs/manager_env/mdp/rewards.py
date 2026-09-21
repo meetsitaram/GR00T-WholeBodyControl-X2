@@ -35,6 +35,12 @@ class RewardsCfg:
     tracking_relative_body_ori_weighted = None
     tracking_body_linvel = None
     tracking_body_angvel = None
+    # Arm-scoped velocity tracking (reuse the body_linvel/angvel funcs with
+    # body_names=arm links). For fast-arm motions (shadow boxing / dance) where the
+    # generic all-body velocity terms dilute the arms; scope + a sharp kernel make
+    # slow/damped arms actually cost reward. Off (None) unless set in a config.
+    tracking_arm_linvel = None
+    tracking_arm_angvel = None
     action_rate_l2 = None
     joint_limit = None
     undesired_contacts = None
@@ -47,6 +53,8 @@ class RewardsCfg:
     tracking_vr_3point_force = None
     tracking_vr_2wrists_ori_tight = None
     tracking_vr_2wrists_local_ori = None
+    # SONIC v1.1 reward stack (local_feet_acc_energy_5pt)
+    energy_consumption = None
     tracking_head_local_ori = None
     anti_shake_ang_vel = None
     tracking_vr_5point_local = None
@@ -54,6 +62,19 @@ class RewardsCfg:
     feet_acc = None
     is_terminated = None
     upright_penalty = None
+    # Soft-landing terms (2026-07-16): touchdown impact velocity + GRF
+    # overshoot. Off (None) unless composed in a config -- see
+    # config/manager_env/rewards/terms/feet_{impact_vel,grf_overshoot}.yaml.
+    feet_impact_vel = None
+    feet_grf_overshoot = None
+    # Dof-subset tracking (2026-08-15, phase-2b wrist pin): makes
+    # reward-invisible joint angles observable. Off unless composed.
+    tracking_wrist_dof = None
+    # Torque-demand-near-limit penalty (2026-09-02, stage 1b of the incumbent
+    # vendor-plant adaptation). Off unless composed / overridden. NOTE: a term
+    # missing here fails at env construction with "RewardsCfg.__init__() got
+    # an unexpected keyword argument" -- hydra `--cfg job` does NOT catch it.
+    torque_saturation = None
 
 
 def tracking_anchor_pos_error(
@@ -159,6 +180,29 @@ def tracking_body_pos_error(
     return torch.exp(-per_body_err.mean(dim=-1) / (std * std))
 
 
+def tracking_body_pos_slow_error(
+    env: ManagerBasedRLEnv, command_name: str, std: float, body_names: list[str] | None = None,
+    v_max: float = 0.35, v_width: float = 0.1, gate_body: str = "pelvis",
+) -> torch.Tensor:
+    """World-frame body position tracking (see ``tracking_body_pos_error``) GATED to slow
+    reference motion. gate = sigmoid((v_max - |v_ref|) / v_width) on the reference linear
+    speed of ``gate_body`` (default pelvis): ~1 below v_max, ~0 above v_max + 3*v_width.
+
+    Added 2026-09-05 for the micro-step fine-tune (pico_v12_chores): the feet get a tight
+    world-position kernel (a skipped 5 cm step must cost reward) ONLY where the reference
+    moves slowly, so fast walks / dances / boxing keep exactly their existing reward.
+    """
+    command: TrackingCommand = env.command_manager.get_term(command_name)
+    tracked = _get_body_indexes(command, body_names)
+    pos_diff = command.body_pos_w[:, tracked] - command.robot_body_pos_w[:, tracked]
+    per_body_err = (pos_diff * pos_diff).sum(dim=-1)
+    base = torch.exp(-per_body_err.mean(dim=-1) / (std * std))
+    g_idx = _get_body_indexes(command, [gate_body])
+    v_ref = command.body_lin_vel_w[:, g_idx].norm(dim=-1).mean(dim=-1)
+    gate = torch.sigmoid((v_max - v_ref) / max(v_width, 1e-6))
+    return base * gate
+
+
 def tracking_vr_3point_error(env: ManagerBasedRLEnv, command_name: str, std: float):
     """Compute VR 3-point tracking reward in world frame using a Gaussian kernel.
 
@@ -245,6 +289,80 @@ def tracking_local_vr_2wrists_ori_error(
 
     error = quat_error_magnitude(ref_wrist_quat_local, robot_wrist_quat_local) ** 2
     return torch.exp(-error.mean(-1) / std**2)
+
+
+def energy_consumption(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize instantaneous mechanical power across the robot joints."""
+    if isinstance(asset_cfg, dict):
+        robot_name = asset_cfg.get("name", "robot")
+    else:
+        robot_name = getattr(asset_cfg, "name", "robot")
+    robot = env.scene[robot_name]
+    return torch.abs(robot.data.applied_torque * robot.data.joint_vel).sum(dim=-1)
+
+
+_TORQUE_SAT_IDS: dict = {}
+
+
+def torque_saturation(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    margin: float = 1.0,
+    joint_names: list | None = None,
+) -> torch.Tensor:
+    """Penalize torque DEMAND above the joint effort limit (stage 1b, 2026-09-02).
+
+    Sum over joints of ``max(0, |computed_torque| / effort_limit - margin)``.
+    ``joint_names`` restricts the sum to those joints. List them EXPLICITLY
+    (operator ruling 2026-09-02, no regex): stage 1b uses
+    ``["waist_pitch_joint", "waist_roll_joint", "left_ankle_pitch_joint",
+    "right_ankle_pitch_joint"]`` -- "limit this to just waist and ankle pitch
+    for now to verify the theory works". ``None`` = all joints. Names are
+    resolved once via ``Articulation.find_joints`` and cached per
+    (robot, names); an empty match raises.
+    ``computed_torque`` is the PD output BEFORE the effort clip, so this is the
+    same ratio the ``act/demand_p99_*`` diagnostics log; ``energy_consumption``
+    and every other term use ``applied_torque`` (post-clip) and are therefore
+    blind to over-demand. With the X2 waist at its hardware 24 N.m the policy
+    kept demanding ~1.4x the limit for 6k iterations of stage 1 -- the
+    diagnostics showed it, nothing in the reward could act on it, and on the
+    robot it is the waist snap-back. ``margin=1.0`` penalizes only actual
+    over-demand; ``margin<1`` starts the gradient before the clip binds.
+    Linear (not squared) so a saturating tick is felt at any excess.
+    """
+    if isinstance(asset_cfg, dict):
+        robot_name = asset_cfg.get("name", "robot")
+    else:
+        robot_name = getattr(asset_cfg, "name", "robot")
+    robot = env.scene[robot_name]
+    tau_c = robot.data.computed_torque
+    lim = getattr(robot.data, "joint_effort_limits", None)
+    if lim is None:
+        lim = getattr(robot.data, "joint_effort_limit", None)
+    if lim is None:
+        raise RuntimeError(
+            "torque_saturation: articulation data has no joint effort limits; "
+            "refusing to silently return zero penalty"
+        )
+    ratio = tau_c.abs() / lim.abs().clamp(min=1e-6)
+    if joint_names:
+        key = (id(robot), tuple(joint_names))
+        ids = _TORQUE_SAT_IDS.get(key)
+        if ids is None:
+            ids, names = robot.find_joints(list(joint_names))
+            if len(ids) == 0:
+                raise RuntimeError(
+                    f"torque_saturation: joint_names {list(joint_names)} matched no joint "
+                    f"of {robot.joint_names}"
+                )
+            print(f"[torque_saturation] scoped to {len(ids)} joints: {names}", flush=True)
+            ids = torch.as_tensor(ids, device=ratio.device, dtype=torch.long)
+            _TORQUE_SAT_IDS[key] = ids
+        ratio = ratio.index_select(-1, ids)
+    return torch.clamp(ratio - margin, min=0.0).sum(dim=-1)
 
 
 def tracking_local_head_ori_error(
@@ -560,6 +678,80 @@ def tracking_body_angvel_error(
     return torch.exp(-per_body_err.mean(dim=-1) / (std * std))
 
 
+def feet_impact_vel_penalty(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize downward foot speed at the instant of touchdown (foot slam).
+
+    Fires ONLY on the tick a foot transitions air -> contact
+    (``compute_first_contact``), penalizing its downward vertical velocity
+    squared. Swing dynamics and steady stance are untouched, so this shapes
+    the LANDING (decelerate before impact) without teaching hovering or
+    hesitant steps -- deliberately NOT a dense "slow feet near ground"
+    shaping, which would feed the known low-speed dead-band.
+
+    Motivation (2026-07-16): recovery steps and dance moves land hard; on
+    real hardware the impact spikes excite unmodeled dynamics.
+
+    Args:
+        env: The environment.
+        sensor_cfg: Contact sensor scoped to the feet, e.g.
+            ``SceneEntityCfg("contact_forces", body_names=".*_ankle_roll_link")``.
+        asset_cfg: Robot asset scoped to the SAME bodies (for velocities).
+
+    Returns:
+        Penalty tensor of shape (num_envs,). Positive values (use negative
+        weight; start small, ~2-5% of tracking-reward magnitude).
+    """
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    # [E, F] bool: feet that just made contact this step
+    first_contact = contact_sensor.compute_first_contact(env.step_dt)[
+        :, sensor_cfg.body_ids
+    ]
+    asset = env.scene[asset_cfg.name]
+    # downward speed at touchdown (positive = moving down): [E, F]
+    down_speed = torch.relu(-asset.data.body_lin_vel_w[:, asset_cfg.body_ids, 2])
+    impact = down_speed * first_contact.float()
+    return (impact * impact).sum(dim=-1)
+
+
+def feet_grf_overshoot_penalty(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    soft_ratio: float = 1.5,
+) -> torch.Tensor:
+    """Penalize vertical ground-reaction force above ``soft_ratio`` x weight.
+
+    Complements ``feet_impact_vel_penalty``: that term shapes the approach
+    (velocity at touchdown), this one shapes the LOADING right after contact
+    -- a hard "catch" after a nominally slow touchdown still spikes force.
+    Normalized by robot weight so the weight is robot-agnostic; forces below
+    the soft threshold (single-stance + normal dynamics headroom) incur zero
+    penalty.
+
+    Args:
+        env: The environment.
+        sensor_cfg: Contact sensor scoped to the feet.
+        asset_cfg: Robot asset (for total mass; default whole robot).
+        soft_ratio: Per-foot force threshold as a multiple of total robot
+            weight (1.5 = full bodyweight + 50% dynamic headroom).
+
+    Returns:
+        Penalty tensor of shape (num_envs,). Positive values (negative weight).
+    """
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    # [E, F] vertical GRF on the feet
+    fz = contact_sensor.data.net_forces_w[:, sensor_cfg.body_ids, 2]
+    asset = env.scene[asset_cfg.name]
+    # [E] robot weight (N)
+    weight_n = asset.data.default_mass.sum(dim=-1).to(fz.device) * 9.81
+    excess = torch.relu(fz - soft_ratio * weight_n.unsqueeze(-1)) / weight_n.unsqueeze(-1)
+    return (excess * excess).sum(dim=-1)
+
+
 def anti_shake_ang_vel_l2(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -591,3 +783,35 @@ def anti_shake_ang_vel_l2(
     excess = torch.relu(speed - threshold)
     penalty = (excess * excess).mean(dim=-1)
     return penalty
+
+
+def tracking_dof_subset_error(
+    env: ManagerBasedRLEnv, command_name: str, std: float,
+    joint_names: list[str] | None = None,
+) -> torch.Tensor:
+    """Joint-ANGLE tracking reward for a named subset of dofs (Gaussian kernel).
+
+    Added 2026-08-15 (phase-2b wrist pin): axes whose angles move no tracked
+    keypoint (wrist roll/pitch) are invisible to every Cartesian tracking term,
+    so adapters drift them freely ("wandering wrist", see frozen-core ledger).
+    This term makes such axes observable in dof space. Uses the command's own
+    reference/actual joint buffers, honoring the dof-mismatch index map.
+    """
+    command: TrackingCommand = env.command_manager.get_term(command_name)
+    cache_key = "_dof_subset_ids_" + ",".join(joint_names or [])
+    ids = getattr(command, cache_key, None)
+    if ids is None:
+        asset_names = env.scene["robot"].data.joint_names
+        robot_ids = [asset_names.index(n) for n in (joint_names or [])]
+        if getattr(command, "has_dof_mismatch", False):
+            body_idx = command.body_joint_indices.tolist()
+            cmd_cols = [body_idx.index(i) for i in robot_ids]
+        else:
+            cmd_cols = robot_ids
+        ids = (torch.as_tensor(robot_ids, device=env.device),
+               torch.as_tensor(cmd_cols, device=env.device))
+        setattr(command, cache_key, ids)
+    robot_ids_t, cmd_cols_t = ids
+    err = (command.joint_pos[:, cmd_cols_t]
+           - command.robot_joint_pos[:, robot_ids_t]).abs().mean(dim=-1)
+    return torch.exp(-err.square() / (std * std))

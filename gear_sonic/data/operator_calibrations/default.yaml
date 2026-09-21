@@ -1,0 +1,204 @@
+schema_version: 2
+operator_id: default
+created_utc: '2026-09-20T00:00:00+00:00'
+units: meters
+notes: 'Neutral reference operator (~1.75 m) shipped for sim runs without a headset.
+  For your own body run: python -m gear_sonic.scripts.vr_operator_calibrate --operator-id
+  <you> (writes data/operator_calibrations/<you>.yaml, which the launchers prefer).'
+poses:
+  arms_down:
+    left_wrist:
+    - -0.037
+    - 0.223
+    - -0.942
+    right_wrist:
+    - -0.016
+    - -0.243
+    - -0.913
+    samples: 99
+    left_vel_rms_mps: 0.011
+    right_vel_rms_mps: 0.047
+    left_wrist_quat_wxyz:
+    - 0.999
+    - -0.018
+    - 0.011
+    - -0.048
+    right_wrist_quat_wxyz:
+    - 0.986
+    - -0.094
+    - 0.131
+    - 0.046
+  t_pose:
+    left_wrist:
+    - -0.045
+    - 0.878
+    - -0.364
+    right_wrist:
+    - -0.005
+    - -0.807
+    - -0.272
+    samples: 99
+    left_vel_rms_mps: 0.017
+    right_vel_rms_mps: 0.06
+    left_wrist_quat_wxyz:
+    - 0.694
+    - 0.716
+    - -0.068
+    - 0.029
+    right_wrist_quat_wxyz:
+    - 0.643
+    - -0.76
+    - 0.075
+    - -0.062
+  arms_forward:
+    left_wrist:
+    - 0.601
+    - 0.185
+    - -0.245
+    right_wrist:
+    - 0.628
+    - -0.114
+    - -0.255
+    samples: 99
+    left_vel_rms_mps: 0.013
+    right_vel_rms_mps: 0.026
+    left_wrist_quat_wxyz:
+    - 0.801
+    - 0.05
+    - -0.596
+    - 0.033
+    right_wrist_quat_wxyz:
+    - 0.852
+    - -0.048
+    - -0.518
+    - -0.05
+  namaste:
+    left_wrist:
+    - 0.053
+    - 0.014
+    - -0.386
+    right_wrist:
+    - 0.059
+    - -0.054
+    - -0.389
+    samples: 99
+    left_vel_rms_mps: 0.058
+    right_vel_rms_mps: 0.018
+    left_wrist_quat_wxyz:
+    - 0.242
+    - -0.131
+    - -0.957
+    - -0.09
+    right_wrist_quat_wxyz:
+    - 0.335
+    - 0.061
+    - -0.938
+    - 0.056
+robot_reference_q_rad:
+  arms_down:
+    left:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    right:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  t_pose:
+    left:
+    - 0.0
+    - 1.4
+    - 0.0
+    - -0.05
+    - 0.0
+    - 0.0
+    - 0.0
+    right:
+    - 0.0
+    - -1.4
+    - 0.0
+    - -0.05
+    - 0.0
+    - 0.0
+    - 0.0
+  arms_forward:
+    left:
+    - -1.4
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    right:
+    - -1.4
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+  namaste:
+    left:
+    - -1.1
+    - 0.0
+    - -1.2
+    - -1.6
+    - 0.0
+    - 0.0
+    - 0.0
+    right:
+    - -1.1
+    - 0.0
+    - 1.2
+    - -1.6
+    - 0.0
+    - 0.0
+    - 0.0
+fit:
+  left:
+    scale:
+    - 0.563
+    - 0.634
+    - 0.557
+    translation:
+    - 0.083
+    - 0.064
+    - 0.393
+    residual_m: 0.137
+    wrist_alignment_quat_wxyz:
+    - 0.991
+    - 0.122
+    - -0.019
+    - 0.046
+    op_quat_offset_rpy_deg:
+    - -5.7
+    - 1.8
+    - -6.0
+  right:
+    scale:
+    - 0.553
+    - 0.689
+    - 0.578
+    translation:
+    - 0.071
+    - -0.06
+    - 0.387
+    residual_m: 0.16
+    wrist_alignment_quat_wxyz:
+    - 0.99
+    - -0.01
+    - -0.135
+    - -0.032
+    op_quat_offset_rpy_deg:
+    - 0.3
+    - 4.4
+    - 10.4

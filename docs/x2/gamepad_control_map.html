@@ -1,0 +1,127 @@
+<title>X2 pad — control map</title>
+<style>
+  body{margin:0;background:#ffffff;color:#1e2228;font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:1rem .5rem 2rem}
+  main{max-width:1000px;margin:0 auto}
+  h1{font-size:1.15rem;text-align:center;margin:.3rem 0 .1rem}
+  .sub{text-align:center;color:#5c6570;font-size:.78rem;margin-bottom:.6rem}
+  svg{width:100%;height:auto;display:block}
+  .legend{display:flex;justify-content:center;gap:1.1rem;flex-wrap:wrap;font-size:.75rem;color:#3c434c;margin-top:.4rem}
+  .dot{display:inline-block;width:.65rem;height:.65rem;border-radius:3px;margin-right:.3rem;vertical-align:-1px}
+</style>
+<main>
+<h1>X2 demo pad — control map</h1>
+<div class="sub">deadman = L2 only · speed locked at launch value · banks from x2_pc2/pad_bindings.env</div>
+<svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b727d"/>
+    </marker>
+  </defs>
+
+  <!-- ================= CONTROLLER (center) ================= -->
+  <g transform="translate(295,240)">
+    <!-- body -->
+    <path d="M40,60 C10,60 -10,95 -14,150 C-18,205 6,235 38,232 C66,229 76,196 96,186
+             L110,178 C130,170 280,170 300,178 L314,186 C334,196 344,229 372,232
+             C404,235 428,205 424,150 C420,95 400,60 370,60
+             C340,58 320,42 205,42 C90,42 70,58 40,60 Z"
+          fill="#eceef1" stroke="#9aa0aa" stroke-width="3"/>
+    <!-- triggers -->
+    <rect x="52" y="8" width="66" height="26" rx="12" fill="#d9dce1" stroke="#8a919c" stroke-width="2"/>
+    <rect x="292" y="8" width="66" height="26" rx="12" fill="#d9dce1" stroke="#8a919c" stroke-width="2"/>
+    <text x="85" y="26" text-anchor="middle" fill="#4a515c" font-size="13" font-weight="600">L2</text>
+    <text x="325" y="26" text-anchor="middle" fill="#4a515c" font-size="13" font-weight="600">R2</text>
+    <!-- bumpers -->
+    <rect x="44" y="40" width="82" height="18" rx="9" fill="#cfd3d9" stroke="#8a919c" stroke-width="2"/>
+    <rect x="284" y="40" width="82" height="18" rx="9" fill="#cfd3d9" stroke="#8a919c" stroke-width="2"/>
+    <text x="85" y="54" text-anchor="middle" fill="#4a515c" font-size="12" font-weight="600">L1</text>
+    <text x="325" y="54" text-anchor="middle" fill="#4a515c" font-size="12" font-weight="600">R1</text>
+    <!-- left stick -->
+    <circle cx="85" cy="115" r="34" fill="#c3c7ce" stroke="#8a919c" stroke-width="3"/>
+    <circle cx="85" cy="115" r="20" fill="#e4e6ea" stroke="#8a919c" stroke-width="2"/>
+    <!-- dpad -->
+    <g fill="#d9dce1" stroke="#8a919c" stroke-width="2">
+      <rect x="138" y="152" width="22" height="60" rx="5"/>
+      <rect x="119" y="171" width="60" height="22" rx="5"/>
+    </g>
+    <!-- right stick -->
+    <circle cx="256" cy="180" r="30" fill="#c3c7ce" stroke="#8a919c" stroke-width="3"/>
+    <circle cx="256" cy="180" r="17" fill="#e4e6ea" stroke="#8a919c" stroke-width="2"/>
+    <!-- ABXY -->
+    <g font-size="14" font-weight="700" text-anchor="middle">
+      <circle cx="325" cy="86" r="15" fill="#e4f2e4" stroke="#3f7d3f" stroke-width="2"/><text x="325" y="91" fill="#2e6b2e">Y</text>
+      <circle cx="291" cy="118" r="15" fill="#eceaf7" stroke="#5d55a0" stroke-width="2"/><text x="291" y="123" fill="#4a4390">X</text>
+      <circle cx="359" cy="118" r="15" fill="#f7e9e9" stroke="#a04848" stroke-width="2"/><text x="359" y="123" fill="#8f3535">B</text>
+      <circle cx="325" cy="150" r="15" fill="#e7f1f6" stroke="#2d6a8a" stroke-width="2"/><text x="325" y="155" fill="#1f5876">A</text>
+    </g>
+  </g>
+
+  <!-- ================= BOXES ================= -->
+  <!-- IGNITION (top left, amber) -->
+  <g>
+    <rect x="18" y="14" width="255" height="86" rx="10" fill="#fff7e6" stroke="#b8860b" stroke-width="2"/>
+    <text x="32" y="38" fill="#9a6d00" font-size="15" font-weight="700">IGNITION</text>
+    <text x="32" y="60" fill="#1e2228" font-size="13">hold L1+L2+R1+R2 ~3 s</text>
+    <text x="32" y="79" fill="#1e2228" font-size="13">(rumble countdown) → press Y</text>
+  </g>
+  <line x1="273" y1="60" x2="352" y2="270" stroke="#6b727d" stroke-width="1.6" marker-end="url(#ar)" opacity=".8"/>
+
+  <!-- DRIVING (left, green) -->
+  <g>
+    <rect x="14" y="200" width="240" height="150" rx="10" fill="#eefaf2" stroke="#2e7d4f" stroke-width="2"/>
+    <text x="28" y="224" fill="#226240" font-size="15" font-weight="700">DRIVING</text>
+    <text x="28" y="246" fill="#1e2228" font-size="13">HOLD L2 = deadman (one hand)</text>
+    <text x="28" y="265" fill="#1e2228" font-size="13">left stick = walk fwd/lat</text>
+    <text x="28" y="284" fill="#1e2228" font-size="13">right stick = turn (yaw) while walking</text>
+    <text x="28" y="303" fill="#1e2228" font-size="13">release L2 = stop (idle)</text>
+    <text x="28" y="322" fill="#5c6570" font-size="12">speed: fixed at launch (0.3 m/s)</text>
+    <text x="28" y="338" fill="#5c6570" font-size="12">obstacle &lt;1.6 m: fwd latches — turn away, re-hold L2</text>
+  </g>
+  <line x1="254" y1="238" x2="360" y2="258" stroke="#2e7d4f" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="254" y1="268" x2="352" y2="345" stroke="#2e7d4f" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="254" y1="290" x2="524" y2="415" stroke="#2e7d4f" stroke-width="1.6" marker-end="url(#ar)" opacity=".85"/>
+
+  <!-- CLIP BANKS (right, blue) -->
+  <g>
+    <rect x="712" y="60" width="272" height="196" rx="10" fill="#eaf3f8" stroke="#2d6a8a" stroke-width="2"/>
+    <text x="726" y="84" fill="#1f5876" font-size="15" font-weight="700">CLIP BANKS · L2 released</text>
+    <text x="726" y="106" fill="#1e2228" font-size="13">L1+Y  easy dances (EASY_DANCES)</text>
+    <text x="726" y="125" fill="#1e2228" font-size="13">L1+X  combat (COMBAT)</text>
+    <text x="726" y="144" fill="#1e2228" font-size="13">L1+B  medium dances (MEDIUM)</text>
+    <text x="726" y="163" fill="#1e2228" font-size="13">L1+A  gestures (GESTURES)</text>
+    <text x="726" y="184" fill="#5c6570" font-size="12">same chord again = next clip</text>
+    <text x="726" y="206" fill="#8f3535" font-size="13" font-weight="700">L1+R1 = STOP clip → idle</text>
+    <text x="726" y="228" fill="#5c6570" font-size="12">combat clips travel ~1.3 m — spacing;</text>
+    <text x="726" y="244" fill="#5c6570" font-size="12">no dancing while driving</text>
+  </g>
+  <line x1="712" y1="120" x2="640" y2="340" stroke="#2d6a8a" stroke-width="1.6" marker-end="url(#ar)"/>
+  <line x1="712" y1="90" x2="384" y2="290" stroke="#2d6a8a" stroke-width="1.6" marker-end="url(#ar)" opacity=".65"/>
+
+  <!-- TURNS (bottom right, blue) -->
+  <g>
+    <rect x="705" y="300" width="279" height="88" rx="10" fill="#eaf3f8" stroke="#2d6a8a" stroke-width="2"/>
+    <text x="719" y="324" fill="#1f5876" font-size="15" font-weight="700">IN-PLACE TURNS · L2 released</text>
+    <text x="719" y="346" fill="#1e2228" font-size="13">right stick L / R = turn clip (when stopped)</text>
+    <text x="719" y="365" fill="#5c6570" font-size="12">fires on entry · other stick clips disabled</text>
+  </g>
+  <line x1="705" y1="344" x2="580" y2="420" stroke="#2d6a8a" stroke-width="1.6" marker-end="url(#ar)"/>
+
+  <!-- E-STOP (bottom, red) -->
+  <g>
+    <rect x="210" y="560" width="580" height="120" rx="12" fill="#fdecec" stroke="#c0392b" stroke-width="3"/>
+    <text x="500" y="588" fill="#a02c20" font-size="17" font-weight="800" text-anchor="middle">E-STOP — any time</text>
+    <text x="500" y="612" fill="#1e2228" font-size="14" text-anchor="middle">hold A+X together, then PUMP both triggers (LT/RT)</text>
+    <text x="500" y="633" fill="#1e2228" font-size="13" text-anchor="middle">first ≈ SOFT stop (idle stand) · keep pumping ~1 s → FULL DAMP</text>
+    <text x="500" y="656" fill="#a02c20" font-size="12.5" text-anchor="middle">robot low / tilted: go straight through to FULL DAMP</text>
+  </g>
+  <line x1="430" y1="560" x2="588" y2="398" stroke="#c0392b" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="560" y1="560" x2="640" y2="366" stroke="#c0392b" stroke-width="2" marker-end="url(#ar)"/>
+  <line x1="300" y1="560" x2="368" y2="268" stroke="#c0392b" stroke-width="2" marker-end="url(#ar)" opacity=".7"/>
+</svg>
+<div class="legend">
+  <span><span class="dot" style="background:#b8860b"></span>ignition</span>
+  <span><span class="dot" style="background:#2e7d4f"></span>driving</span>
+  <span><span class="dot" style="background:#2d6a8a"></span>clips &amp; turns</span>
+  <span><span class="dot" style="background:#c0392b"></span>e-stop</span>
+</div>
+</main>

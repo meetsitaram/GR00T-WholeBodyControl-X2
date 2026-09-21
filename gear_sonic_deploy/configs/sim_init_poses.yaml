@@ -1,0 +1,245 @@
+# gear_sonic_deploy/configs/sim_init_poses.yaml
+#
+# Init poses + ElasticBand suspension parameters for the X2 MuJoCo
+# bridge's `--init-pose` selector (`gear_sonic_deploy/scripts/x2_mujoco_ros_bridge.py`).
+# Operators can edit this file directly to add or tune poses without
+# touching bridge code; the bridge re-reads it on every launch.
+#
+# Schema per entry:
+#   description:     free-text describing the physical state the pose mirrors.
+#   source_capture:  optional path (relative to gear_sonic_deploy/) to the
+#                    x2_capture_pose.py JSON the pose came from.
+#   pelvis_z:        float, m. World-frame Z of the pelvis body origin at
+#                    spawn, computed via FK on x2_ultra.xml assuming feet on
+#                    the ground (use scripts/x2_pelvis_z_from_capture.py).
+#   band_length:     float, m. ElasticBand `length` field. The band's
+#                    rest position (where it applies zero force) is at
+#                    world z = 1.0 + band_length, NOT 1.0 - band_length
+#                    (don't be fooled by the name -- see the formula in
+#                    ElasticBand.Advance(): f = kp * ((anchor - pos) +
+#                    [0, 0, length])). So:
+#                      band_length =  0     -> rest at z=1.0  (legacy default,
+#                                              robot dangles ~96 cm pelvis-z
+#                                              with 35 kg gravity)
+#                      band_length = -0.335 -> rest at z=0.665 (zero band force
+#                                              at FK-derived gantry_hang pelvis,
+#                                              feet take 100 % body weight)
+#                      band_length = -0.305 -> rest at z=0.695 (~88 % body weight
+#                                              on band at pelvis_z=0.665, ~12 %
+#                                              on feet -- "loose gantry strap")
+#                    Closed-form for X % body-weight on the band at a given
+#                    pelvis_z:
+#                       band_length = pelvis_z - 1.0 + (X/100) * mg / kp
+#                                   = pelvis_z - 1.0 + 0.0343 * (X/100)
+#                    (kp = 10000 N/m, m = 35 kg, mg = 343 N).
+#                    Negative values are normal and expected for any pose
+#                    that wants the feet on the ground. A value of 0 keeps
+#                    the legacy "rope from the ceiling" behaviour.
+#   offsets_rad:     map of joint_name -> offset (rad) from DEFAULT_DOF
+#                    (policy_parameters.hpp). Joints absent from this map
+#                    stay at DEFAULT_DOF. Joint names match
+#                    MUJOCO_JOINT_NAMES in x2_mujoco_ros_bridge.py /
+#                    eval_x2_mujoco.py.
+#
+# Source-of-truth captures live in `gear_sonic_deploy/scripts/_capture_*.json`.
+# Symmetrization rules applied:
+#   * sagittal pitch + knee joints  -> simple L/R average of offsets
+#   * frontal roll joints (paired)  -> mirror-symmetric, |L|=|R|=avg(|L|,|R|)
+#   * transverse yaw joints (paired)-> mirror-symmetric same as roll
+#   * waist + head (single joints)  -> kept as captured (or zeroed if noise)
+#   * dead band                     -> drop offsets with |angle| < 1.0 deg
+# This removes gantry-induced side tilts that aren't part of the intended pose.
+
+default:
+  description: |
+    Trained DEFAULT_DOF (policy_parameters.hpp). Used by --init-pose=default
+    in the bridge as a built-in special case (it does not actually read this
+    YAML entry; this stub exists for documentation only). The legacy bridge
+    behaviour spawns the pelvis at z=0.85 m, NOT the FK-implied 0.644 m, to
+    give the elastic band slack at startup. See _reset_to_default_pose() in
+    the bridge.
+  pelvis_z: 0.85
+  band_length: 0.0
+  offsets_rad: {}
+
+
+gantry_hang:
+  description: |
+    MC-stand pose with loose gantry strap -- the state at the instant of
+    MC -> policy handoff in real bring-up. Firmware actively driving the
+    joints to its standing pose, gantry taking ~50 % body weight, feet
+    bearing the rest. Pelvis sits ~2 cm ABOVE the trained DEFAULT_DOF
+    baseline because firmware-stand has straighter legs than DEFAULT_DOF
+    (knees +28 deg vs trained +38 deg). Best sim profile for testing the
+    real handoff sequence.
+  source_capture: scripts/_capture_B_gantry_loosened.json
+  pelvis_z: 0.665
+  # rest at z=0.695 (= 1.0 + band_length); ~88 % of body weight (302 N) on
+  # band, ~12 % (41 N) on feet at spawn pelvis_z=0.665.
+  band_length: -0.305
+  offsets_rad:
+    left_hip_pitch_joint:        +0.0653  # +3.74 deg  (avg L=+5.32, R=+2.15)
+    left_knee_joint:             -0.1883  # -10.79 deg (avg L=-9.75, R=-11.82)
+    left_ankle_pitch_joint:      +0.0775  # +4.44 deg  (avg L=+4.01, R=+4.86)
+    right_hip_pitch_joint:       +0.0653
+    right_knee_joint:            -0.1883
+    right_ankle_pitch_joint:     +0.0775
+    left_shoulder_pitch_joint:   +0.1867  # +10.70 deg (avg L=+10.74, R=+10.65)
+    left_shoulder_roll_joint:    -0.2480  # -14.21 deg (mirror-symm magnitude)
+    left_elbow_joint:            -0.5740  # -32.89 deg (avg L=-32.91, R=-32.87)
+    right_shoulder_pitch_joint:  +0.1867
+    right_shoulder_roll_joint:   +0.2480  # +14.21 deg
+    right_elbow_joint:           -0.5740
+
+
+gantry_dangle:
+  description: |
+    Zero-torque hanging pose. MC fully stopped, robot passive, gantry strap
+    catches the body. Joints sag under gravity until the body finds a
+    static equilibrium: pelvis drops ~4 cm BELOW DEFAULT_DOF (legs collapse
+    into a deeper crouch, knees +60 deg, hips bend forward). Less common
+    in real bring-up than gantry_hang but valuable for stress-testing the
+    policy's recovery from off-distribution starting poses.
+  source_capture: scripts/_capture_C_zero_torque.json
+  pelvis_z: 0.603
+  # rest at z=0.633 (= 1.0 + band_length); ~88 % body weight on band at
+  # spawn pelvis_z=0.603 (deeper crouch).
+  band_length: -0.367
+  offsets_rad:
+    left_hip_pitch_joint:        -0.3925  # -22.49 deg (avg L=-23.09, R=-21.89)
+    left_knee_joint:             +0.3828  # +21.93 deg (avg L=+23.54, R=+20.32)
+    left_ankle_pitch_joint:      -0.1719  #  -9.85 deg (avg L=-10.69, R=-9.01)
+    right_hip_pitch_joint:       -0.3925
+    right_knee_joint:            +0.3828
+    right_ankle_pitch_joint:     -0.1719
+    waist_pitch_joint:           +0.3491  # +20.00 deg (forward torso lean)
+    left_shoulder_pitch_joint:   -0.5511  # -31.58 deg (avg L=-30.38, R=-32.77)
+    left_shoulder_roll_joint:    -0.3256  # -18.65 deg (mirror-symm magnitude)
+    left_elbow_joint:            +0.1843  #  +10.56 deg (avg L=+9.02, R=+12.10)
+    right_shoulder_pitch_joint:  -0.5511
+    right_shoulder_roll_joint:   +0.3256  # +18.65 deg
+    right_elbow_joint:           +0.1843
+
+# ---------------------------------------------------------------------------
+# stand_settled -- ADDED 2026-08-23. Free-standing handover pose.
+#
+# WHY: neither shipped pose is kinematically grounded for a band-free run.
+# Forward kinematics on x2_ultra.xml (lowest class="foot" contact sphere,
+# minus its radius) gives:
+#
+#     default      pelvis_z 0.850  ->  feet FLOAT  +0.175 m above the floor
+#     gantry_hang  pelvis_z 0.665  ->  feet PENETRATE -0.011 m
+#
+# Both are correct only WITH their band engaged (default assumes the band at
+# 0.85; gantry_hang assumes band_length -0.305). Run either with
+# --sim-no-elastic-band and the robot is dropped 17.5 cm, or spawned inside the
+# floor and launched by the contact solver. Two tests on 2026-08-23 (C1, D1)
+# did exactly that and were scored as policy failures.
+#
+# This pose keeps gantry_hang's joint angles -- which match the real robot at
+# MC handover to within ~2 deg (knee: sim 0.481 vs real 0.508; hip_pitch:
+# -0.247 vs -0.279, measured from the observe-only captures) -- and replaces
+# the gantry-supported height with the FK-derived one that puts the contact
+# spheres exactly on the floor: 0.68054, found by bisection on the FK, NOT by
+# adding the penetration depth to 0.665 (the root is a free joint whose z is
+# not the pelvis body origin, so the correction is not 1:1 -- a hand-computed
+# 0.6758 was still 4.7 mm into the floor).
+#
+# Use with --sim-no-elastic-band to model the current free-standing ritual:
+# MC holds the robot in a settled weight-bearing stand, deploy takes over.
+# ---------------------------------------------------------------------------
+stand_settled:
+  description: |
+    Free-standing MC handover: gantry_hang joint angles (verified against the
+    real robot to ~2 deg) with an FK-grounded pelvis height so the feet rest on
+    the floor unsupported. Intended for --sim-no-elastic-band.
+  source_capture: scripts/_capture_B_gantry_loosened.json  # angles only
+  pelvis_z: 0.68054
+  band_length: 0.0
+  offsets_rad:
+    left_hip_pitch_joint: 0.0653
+    right_hip_pitch_joint: 0.0653
+    left_knee_joint: -0.1883
+    right_knee_joint: -0.1883
+
+
+waist_tilt_05:
+  description: |
+    E21 (operator-proposed): gantry_hang handoff pose PLUS 5 deg of initial
+    waist pitch AND roll error. Tests whether the startup wobble scales with
+    how far the waist starts from the kplanner standing pose. The real robot
+    starts only ~2-3 deg away; if the wobble is driven by nulling that initial
+    error, a larger error must produce a larger wobble.
+    Baseline for comparison is gantry_hang (waist offsets = 0).
+  source_capture: scripts/_capture_B_gantry_loosened.json
+  pelvis_z: 0.665
+  band_length: -0.305
+  offsets_rad:
+      left_hip_pitch_joint:        +0.0653
+      left_knee_joint:             -0.1883
+      left_ankle_pitch_joint:      +0.0775
+      right_hip_pitch_joint:       +0.0653
+      right_knee_joint:            -0.1883
+      right_ankle_pitch_joint:     +0.0775
+      left_shoulder_pitch_joint:   +0.1867
+      left_shoulder_roll_joint:    -0.2480
+      left_elbow_joint:            -0.5740
+      right_shoulder_pitch_joint:  +0.1867
+      right_shoulder_roll_joint:   +0.2480
+      right_elbow_joint:           -0.5740
+      waist_pitch_joint:           +0.0873  # +5 deg
+      waist_roll_joint:            +0.0873  # +5 deg
+
+waist_tilt_10:
+  description: |
+    E21 (operator-proposed): gantry_hang handoff pose PLUS 10 deg of initial
+    waist pitch AND roll error. Tests whether the startup wobble scales with
+    how far the waist starts from the kplanner standing pose. The real robot
+    starts only ~2-3 deg away; if the wobble is driven by nulling that initial
+    error, a larger error must produce a larger wobble.
+    Baseline for comparison is gantry_hang (waist offsets = 0).
+  source_capture: scripts/_capture_B_gantry_loosened.json
+  pelvis_z: 0.665
+  band_length: -0.305
+  offsets_rad:
+      left_hip_pitch_joint:        +0.0653
+      left_knee_joint:             -0.1883
+      left_ankle_pitch_joint:      +0.0775
+      right_hip_pitch_joint:       +0.0653
+      right_knee_joint:            -0.1883
+      right_ankle_pitch_joint:     +0.0775
+      left_shoulder_pitch_joint:   +0.1867
+      left_shoulder_roll_joint:    -0.2480
+      left_elbow_joint:            -0.5740
+      right_shoulder_pitch_joint:  +0.1867
+      right_shoulder_roll_joint:   +0.2480
+      right_elbow_joint:           -0.5740
+      waist_pitch_joint:           +0.1745  # +10 deg
+      waist_roll_joint:            +0.1745  # +10 deg
+
+waist_tilt_15:
+  description: |
+    E21 (operator-proposed): gantry_hang handoff pose PLUS 15 deg of initial
+    waist pitch AND roll error. Tests whether the startup wobble scales with
+    how far the waist starts from the kplanner standing pose. The real robot
+    starts only ~2-3 deg away; if the wobble is driven by nulling that initial
+    error, a larger error must produce a larger wobble.
+    Baseline for comparison is gantry_hang (waist offsets = 0).
+  source_capture: scripts/_capture_B_gantry_loosened.json
+  pelvis_z: 0.665
+  band_length: -0.305
+  offsets_rad:
+      left_hip_pitch_joint:        +0.0653
+      left_knee_joint:             -0.1883
+      left_ankle_pitch_joint:      +0.0775
+      right_hip_pitch_joint:       +0.0653
+      right_knee_joint:            -0.1883
+      right_ankle_pitch_joint:     +0.0775
+      left_shoulder_pitch_joint:   +0.1867
+      left_shoulder_roll_joint:    -0.2480
+      left_elbow_joint:            -0.5740
+      right_shoulder_pitch_joint:  +0.1867
+      right_shoulder_roll_joint:   +0.2480
+      right_elbow_joint:           -0.5740
+      waist_pitch_joint:           +0.2618  # +15 deg
+      waist_roll_joint:            +0.2618  # +15 deg

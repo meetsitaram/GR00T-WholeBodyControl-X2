@@ -77,7 +77,20 @@ class MotionModel(LightningModule):
         self._vqvae_model_loaded = False
         vqvae_model_ckpt_path = self._args.vqvae_model_ckpt_path
         if os.path.exists(vqvae_model_ckpt_path):
-            vqvae_model_weights = t.load(vqvae_model_ckpt_path)['state_dict']
+            # PyTorch 2.6 flipped the ``torch.load`` default to
+            # ``weights_only=True``, which rejects this checkpoint
+            # (training-time pickled state_dict with non-tensor
+            # objects -> "Unsupported operand 118"). The VQVAE
+            # checkpoints are produced in-house by our own training
+            # runs, so the trust model is identical to every other
+            # ``torch.load`` in motionbricks (see
+            # load_x2_planner.py:223 / load_g1_planner.py:178, both
+            # of which already pass ``weights_only=False`` for the
+            # same reason). Pin the same flag here so kplanner
+            # bring-up doesn't crash under torch>=2.6.
+            vqvae_model_weights = t.load(
+                vqvae_model_ckpt_path, weights_only=False
+            )['state_dict']
             with t.no_grad():
                 for sub_network in ['pose_net', 'root_net']:
                     if self._supporting_networks[sub_network] is None:
@@ -270,6 +283,22 @@ class MotionModel(LightningModule):
         num_all_tokens_per_sample = num_pose_heads * num_token_positions
         num_focus_tokens = (num_all_tokens_per_sample * focus_mask_probs).int()   # [batch, 1]
         num_masked_tokens = t.floor(num_focus_tokens * self._args['masked_token_ratio']).int()
+        # full-mask regime: masked_token_ratio guarantees >=20% of tokens stay
+        # visible as ground-truth anchors, so generation-from-scratch (100%
+        # masked) is never trained and rare sequences (e.g. standing-start
+        # turns) collapse to the idle mode at inference. With probability
+        # fully_masked_sample_prob per sample, mask EVERY token so the from-scratch
+        # joint prior is trained directly. Default 0.0 preserves the original
+        # behavior exactly.
+        fully_masked_sample_prob = float(self._args.get('fully_masked_sample_prob', 0.0))
+        if fully_masked_sample_prob > 0.0:
+            full_mask = t.rand([batch_size, 1], device=device) < fully_masked_sample_prob
+            num_focus_tokens = t.where(full_mask,
+                                       t.full_like(num_focus_tokens, num_all_tokens_per_sample),
+                                       num_focus_tokens)
+            num_masked_tokens = t.where(full_mask,
+                                        t.full_like(num_masked_tokens, num_all_tokens_per_sample),
+                                        num_masked_tokens)
         num_incorrect_tokens = t.floor((num_focus_tokens - num_masked_tokens) * incorrect_probs).int()
         # num_correct_tokens = num_focus_tokens - num_masked_tokens - num_incorrect_tokens
 

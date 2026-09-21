@@ -23,20 +23,27 @@
 """
 
 from collections import defaultdict, deque
-from enum import Enum, IntEnum
 import os
 import subprocess
 import threading
 import time
 
-import msgpack
 import numpy as np
 from scipy.spatial.transform import Rotation as R, Rotation as sRot
 import torch
 import zmq
 
-from gear_sonic.utils.teleop import input_readers
-from gear_sonic.utils.teleop.zmq.zmq_poller import ZMQPoller
+from gear_sonic.utils.teleop.common import (
+    FeedbackReader,
+    LocomotionMode,
+    StreamMode,
+    ThreePointPose,
+    YawAccumulator,
+    JOYSTICK_DEADZONE,
+    compute_hand_joints_from_inputs,
+    generate_finger_data,
+    init_hand_ik_solvers,
+)
 from gear_sonic.trl.utils.rotation_conversion import decompose_rotation_aa
 from gear_sonic.trl.utils.torch_transform import (
     angle_axis_to_quaternion,
@@ -78,243 +85,28 @@ except ImportError:
     xrt = None
 
 try:
-    from gear_sonic.utils.teleop.solver.hand.g1_gripper_ik_solver import (
-        G1GripperInverseKinematicsSolver,
-    )
-except ImportError:
-    print("Warning: G1GripperInverseKinematicsSolver not available.")
-    G1GripperInverseKinematicsSolver = None
-
-try:
     from gear_sonic.utils.teleop.vis.vr3pt_pose_visualizer import VR3PtPoseVisualizer
 except ImportError:
-    print("Warning: VR3PtPoseVisualizer not available (pyvista may not be installed).")
     VR3PtPoseVisualizer = None
 
 try:
     from gear_sonic.utils.teleop.vis.vr3pt_pose_visualizer import get_g1_key_frame_poses
 except ImportError:
-    print("Warning: get_g1_key_frame_poses not available (pyvista may not be installed).")
     get_g1_key_frame_poses = None
-
-
-class LocomotionMode(IntEnum):
-    """Locomotion mode enum for robot movement."""
-
-    IDLE = 0
-    SLOW_WALK = 1
-    WALK = 2
-    RUN = 3
-    IDLE_SQUAT = 4
-    IDLE_KNEEL_TWO_LEGS = 5
-    IDLE_KNEEL = 6
-    IDLE_LYING_FACE_DOWN = 7
-    CRAWLING = 8
-    IDLE_BOXING = 9
-    WALK_BOXING = 10
-    LEFT_PUNCH = 11
-    RIGHT_PUNCH = 12
-    RANDOM_PUNCH = 13
-    ELBOW_CRAWLING = 14
-    LEFT_HOOK = 15
-    RIGHT_HOOK = 16
-    FORWARD_JUMP = 17
-    STEALTH_WALK = 18
-    INJURED_WALK = 19
-
-
-class StreamMode(Enum):
-    OFF = 0
-    POSE = 1
-    PLANNER = 2
-    PLANNER_FROZEN_UPPER_BODY = 3
-    POSE_PAUSE = 4
-    PLANNER_VR_3PT = 5
 
 
 ### Parse 3 point pose from SMPL
 #
-# OFFSETS: Rotation corrections applied to each keypoint to align SMPL joint frames
-# with the desired robot/visualization coordinate convention.
-#
-# Index mapping (based on [0, 22, 23, 12].index(joint_id)):
-#   - OFFSETS[0]: Root/Pelvis (joint 0)
-#   - OFFSETS[1]: Left Wrist (joint 22)
-#   - OFFSETS[2]: Right Wrist (joint 23)
-#   - OFFSETS[3]: Neck (joint 12) - more stable than Head (joint 15) for body tracking
-#
-# Scipy euler rotation convention:
-#   - Lowercase "xyz" = EXTRINSIC rotations (about the FIXED/ORIGINAL frame's axes)
-#   - Uppercase "XYZ" = INTRINSIC rotations (about the ROTATING body's axes)
-#
-# For EXTRINSIC "xyz" with angles [a, b, c]:
-#   All rotations are about the ORIGINAL frame's axes (before any rotation):
-#     R_total = R_z(c) @ R_y(b) @ R_x(a)   (matrix multiplication order)
-#   Applied as: first rotate 'a' about original X, then 'b' about original Y, then 'c' about original Z
-#
-# For INTRINSIC "XYZ" with angles [a, b, c]:
-#   Each rotation is about the CURRENT (rotated) frame's axis:
-#     R_total = R_x(a) @ R_y(b) @ R_z(c)   (matrix multiplication order)
-#   Applied as: first rotate 'a' about X, then 'b' about NEW Y, then 'c' about NEW Z
-#
-OFFSETS = [
-    sRot.from_euler("xyz", [0, 0, -90], degrees=True),  # Root: yaw -90° about fixed Z
-    sRot.from_euler("xyz", [90, 0, 0], degrees=True),  # L-Wrist: roll +90° about fixed X
-    sRot.from_euler(
-        "xyz", [-90, 0, 180], degrees=True
-    ),  # R-Wrist: roll -90° about fixed X, then yaw 180° about fixed Z
-    sRot.from_euler("xyz", [0, 0, -90], degrees=True),  # Neck: yaw -90° about fixed Z
-]
-
-
-def _compute_rel_transform(pose, world_frame, scalar_first=True):
-    """
-    Transform a pose from Unity coordinate frame to robot coordinate frame.
-
-    Args:
-        pose: np.ndarray shape (7,) - [x, y, z, qx, qy, qz, qw] in Unity frame
-        world_frame: np.ndarray shape (7,) - reference frame to compute relative transform
-        scalar_first: bool - if True, quaternion is [qw, qx, qy, qz]; if False, [qx, qy, qz, qw]
-
-    Returns:
-        rel_pos: np.ndarray (3,) - position in robot frame
-        rel_rot: np.ndarray (4,) - quaternion [qw, qx, qy, qz] in robot frame
-
-    Coordinate transform matrix Q converts Unity (Y-up, left-handed) to Robot (Z-up, right-handed):
-        Unity:  X-right, Y-up, Z-forward
-        Robot:  X-forward, Y-left, Z-up
-    """
-    world_frame = world_frame.copy()
-
-    # Q transforms Unity coordinates to Robot coordinates
-    # Unity [x, y, z] -> Robot [-x, z, y]
-    Q = np.array([[-1, 0, 0], [0, 0, 1], [0, 1, 0.0]])
-    pose[:3] = Q @ pose[:3]
-    world_frame[:3] = Q @ world_frame[:3]
-    rot_base = sRot.from_quat(world_frame[3:], scalar_first=scalar_first).as_matrix()
-    rot = sRot.from_quat(pose[3:], scalar_first=scalar_first).as_matrix()
-    rel_rot = sRot.from_matrix(Q @ (rot_base.T @ rot) @ Q.T)
-    rel_pos = sRot.from_matrix(Q @ rot_base.T @ Q.T).apply(pose[:3] - world_frame[:3])
-    return rel_pos, rel_rot.as_quat(scalar_first=True)
-
-
-def _process_3pt_pose(smpl_pose_np):
-    """
-    Extract 3-point VR pose (L-Wrist, R-Wrist, Neck) from full SMPL body joint poses.
-
-    NOTE: We use Neck (joint 12) instead of Head (joint 15) because:
-      - Neck is more rigidly coupled to the torso
-      - Head has high DoF (looking around) which doesn't reflect body pose
-      - Neck provides more stable tracking for upper body orientation
-
-    Args:
-        smpl_pose_np: np.ndarray shape (24, 7) - 24 SMPL joints, each [x, y, z, qx, qy, qz, qw]
-                      in Unity frame (scalar-last quaternion format)
-
-    Returns:
-        vr_3pt_pose: np.ndarray shape (3, 7) - 3 keypoints in robot frame
-                     Each row is [x, y, z, qw, qx, qy, qz] (scalar-FIRST quaternion format)
-                     Row 0: Left Wrist (SMPL joint 22)
-                     Row 1: Right Wrist (SMPL joint 23)
-                     Row 2: Neck (SMPL joint 12)
-
-                     IMPORTANT: Positions and orientations are RELATIVE TO ROOT (pelvis).
-
-    Processing Steps:
-        1. Transform all 24 joints from Unity frame to robot frame
-        2. Extract 4 keypoints: Root(0), L-Wrist(22), R-Wrist(23), Neck(12)
-        3. Apply per-joint rotation OFFSETS to align joint frames
-        4. Make L-Wrist, R-Wrist, Neck relative to Root (both position and orientation)
-        5. Return only the 3 non-root keypoints
-
-    Note: Position calibration (wrist offsets, neck kinematic chain) is done in
-          ThreePointPose.apply_calibration() to ensure consistency with calibrated
-          orientations.
-    """
-
-    # Defensive copy: _compute_rel_transform modifies pose[:3] in-place, which would
-    # corrupt the caller's array (e.g. PicoReader._latest) and cause wrong results
-    # if the same sample is processed more than once.
-    smpl_pose_np = smpl_pose_np.copy()
-
-    # =========================================================================
-    # STEP 1: Transform all joints from Unity frame to robot frame
-    # =========================================================================
-    # Input: smpl_pose_np[i] = [x, y, z, qx, qy, qz, qw] in Unity frame (scalar-last)
-    # Output: body_poses[i] = [x, y, z, qw, qx, qy, qz] in robot frame (scalar-first)
-    body_poses = np.zeros((smpl_pose_np.shape[0], 7), dtype=np.float32)
-    for i in range(smpl_pose_np.shape[0]):
-        pos, orn = _compute_rel_transform(
-            smpl_pose_np[i], [0, 0, 0, 0, 0, 0, 1], scalar_first=False
-        )
-        body_poses[i, :3] = pos  # Position in robot frame
-        body_poses[i, 3:] = orn  # Quaternion [qw, qx, qy, qz] in robot frame
-
-    # =========================================================================
-    # STEP 2 & 3: Extract 4 keypoints and apply rotation OFFSETS
-    # =========================================================================
-    # We only care about these SMPL joint indices:
-    #   - Joint 0:  Root/Pelvis (reference frame)
-    #   - Joint 22: Left Wrist
-    #   - Joint 23: Right Wrist
-    #   - Joint 12: Neck (more stable than Head joint 15)
-    #
-    # kp_poses maps these to indices 0, 1, 2, 3 respectively
-    positions = np.array([[p[0], p[1], p[2]] for p in body_poses])
-    kp_poses = np.zeros((4, 7), dtype=np.float32)
-
-    for i, pose in enumerate(body_poses):
-        if i not in [0, 22, 23, 12]:
-            continue  # Skip joints we don't care about
-
-        pos = positions[i]
-
-        # Map SMPL joint index to our keypoint index (0-3)
-        # rel_i: 0=Root, 1=L-Wrist, 2=R-Wrist, 3=Neck
-        rel_i = [0, 22, 23, 12].index(i)
-
-        # Extract quaternion and apply rotation offset
-        # pose[3:7] is [qw, qx, qy, qz] (scalar-first from _compute_rel_transform)
-        quat = np.array([pose[3], pose[4], pose[5], pose[6]])
-
-        # Apply offset: new_rotation = original_rotation * OFFSET
-        # This post-multiplies the offset (intrinsic rotation)
-        rot_quat = (sRot.from_quat(quat, scalar_first=True) * OFFSETS[rel_i]).as_quat(
-            scalar_first=False
-        )
-
-        kp_poses[rel_i, 3:] = rot_quat  # Store as scalar-last temporarily for scipy compatibility
-        kp_poses[rel_i, :3] = pos
-
-    # =========================================================================
-    # STEP 4: Make positions and orientations RELATIVE TO ROOT
-    # =========================================================================
-    # This transforms everything into the root's local coordinate frame.
-    # After this step:
-    #   - Root's position would be (0,0,0) and orientation identity (but we don't return root)
-    #   - Other keypoints are expressed relative to root
-    root_pos = kp_poses[0, :3].copy()
-    root_quat = kp_poses[0, 3:].copy()  # Still scalar-last for scipy
-
-    for i in range(1, 4):
-        # Position: subtract root position, then rotate by inverse of root orientation
-        kp_poses[i, :3] = sRot.from_quat(root_quat).inv().apply(kp_poses[i, :3] - root_pos)
-
-        # Orientation: compute relative rotation (root_inv * keypoint_rot)
-        # Result stored as scalar-FIRST [qw, qx, qy, qz]
-        kp_poses[i, 3:] = (
-            sRot.from_quat(root_quat).inv() * sRot.from_quat(kp_poses[i, 3:])
-        ).as_quat(scalar_first=True)
-
-    # =========================================================================
-    # STEP 5: Return only L-Wrist, R-Wrist, Neck (skip Root)
-    # =========================================================================
-    # NOTE: Position and orientation calibration (including neck position via kinematic
-    #       chain) is done in ThreePointPose.apply_calibration() to ensure consistency
-    #       between calibrated orientation and computed neck position.
-    # kp_poses[1:] = indices 1, 2, 3 = L-Wrist, R-Wrist, Neck
-    # Each row: [x, y, z, qw, qx, qy, qz] relative to root, scalar-first quaternion
-    return kp_poses[1:]
+# OFFSETS / _compute_rel_transform / _process_3pt_pose moved to
+# gear_sonic/utils/teleop/pico_3pt.py (2026-08-15) so the X2 teleop
+# manager can reuse the same Unity->robot reduction without importing
+# this script's torch/zmq/visualizer stack. Re-imported here under the
+# original names; all in-file callers are unchanged.
+from gear_sonic.utils.teleop.pico_3pt import (  # noqa: E402
+    OFFSETS,
+    _compute_rel_transform,
+    _process_3pt_pose,
+)
 
 
 # =============================================================================
@@ -489,73 +281,8 @@ def process_smpl_joints(body_pose, global_orient, transl):
     }
 
 
-def generate_finger_data(hand: str, trigger: float, grip: float) -> np.ndarray:
-    """
-    Generate finger position data from Pico controller button states.
-
-    Args:
-        hand: "left" or "right"
-        trigger: Trigger button value (0-1)
-        grip: Grip button value (0-1)
-
-    Returns:
-        Array of shape [25, 4, 4] representing fingertip positions
-    """
-    fingertips = np.zeros([25, 4, 4])
-
-    thumb = 0
-    middle = 10
-    # Control thumb based on shoulder button state (index 4 is thumb tip)
-    fingertips[4 + thumb, 0, 3] = 1.0  # open thumb
-    if trigger > 0.5:
-        fingertips[4 + middle, 0, 3] = 1.0  # close middle
-
-    return fingertips
-
-
-# Joystick deadzone threshold
-JOYSTICK_DEADZONE = 0.15
-
-
-class YawAccumulator:
-    """Accumulates yaw heading angle based on joystick input."""
-
-    def __init__(self, yaw_gain: float = 1.5, deadzone: float = JOYSTICK_DEADZONE):
-        self.yaw_gain = yaw_gain
-        self.deadzone = deadzone
-        self.reset()
-
-    def reset(self):
-        """Reset facing direction to default (1,0,0)."""
-        self.heading = [1.0, 0.0, 0.0]
-        self.yaw_angle_rad = 0.0
-        self.dyaw = 0.0
-        print("YawAccumulator: reset yaw angle to 0.0")
-
-    def yaw_angle(self) -> float:
-        """Get current yaw angle in radians."""
-        return self.yaw_angle_rad
-
-    def yaw_angle_change(self) -> float:
-        """Get current yaw angle change in radians."""
-        return self.dyaw
-
-    def update(self, rx: float, dt: float) -> list[float]:
-        """
-        Update facing direction based on right stick x-axis input.
-
-        Args:
-            rx: Right stick x-axis value (-1 to 1)
-            dt: Time delta in seconds
-
-        Returns:
-            Facing direction as [x, y, 0.0]
-        """
-        self.dyaw = self.yaw_gain * (-rx) * dt
-        if abs(rx) >= self.deadzone:
-            self.yaw_angle_rad += self.dyaw
-            self.heading = [np.cos(self.yaw_angle_rad), np.sin(self.yaw_angle_rad), 0.0]
-        return self.heading
+# generate_finger_data, JOYSTICK_DEADZONE, and YawAccumulator are imported
+# from gear_sonic.utils.teleop.common
 
 
 def compute_from_body_poses(parent_indices: list, device, body_poses_np: np.ndarray):
@@ -583,7 +310,13 @@ def compute_from_body_poses(parent_indices: list, device, body_poses_np: np.ndar
     global_orient = torch.from_numpy(pose_aa[0]).float().to(device).unsqueeze(0)
     transl = torch.from_numpy(positions[0]).float().to(device).unsqueeze(0)
 
-    return process_smpl_joints(body_pose, global_orient, transl)
+    out = process_smpl_joints(body_pose, global_orient, transl)
+    # Per-joint LOCAL rotations (rotvec, parent frame) -- the wrists' local
+    # rotation (joints 20/21, in the elbow/forearm frame) is what the Pico
+    # whole-body teleop maps onto the X2 wrist pitch/roll (2026-09-04); the
+    # SMPL obs itself only carries positions.
+    out["pose_aa"] = pose_aa
+    return out
 
 
 # def compute_latest_frame(parent_indices: list, device) -> tuple[np.ndarray, np.ndarray]:
@@ -596,37 +329,11 @@ def compute_from_body_poses(parent_indices: list, device, body_poses_np: np.ndar
 #     return compute_from_body_poses(parent_indices, device, body_poses_np)
 
 
-def init_hand_ik_solvers():
-    """Initialize hand IK solvers if available."""
-    if G1GripperInverseKinematicsSolver is not None:
-        left_solver = G1GripperInverseKinematicsSolver(side="left")
-        right_solver = G1GripperInverseKinematicsSolver(side="right")
-        print("Hand IK solvers initialized")
-        return left_solver, right_solver
-    print("Warning: Hand IK solvers not available")
-    return None, None
+# init_hand_ik_solvers is imported from gear_sonic.utils.teleop.common
 
 
-# Readers that expose `get_controller_data()` returning the IsaacTeleop
-# controller_data dict schema (left/right trigger/squeeze, thumbstick, clicks).
-# Tuple form keeps the dispatch sites uniform if/when a second reader speaks
-# the same schema.
-_ISAAC_TELEOP_READERS = (input_readers.IsaacTeleopReader,)
-
-
-def get_controller_inputs(reader=None):
-    """Fetch controller button/trigger states from XRoboToolkit or IsaacTeleop."""
-    if isinstance(reader, _ISAAC_TELEOP_READERS):
-        ctrl = reader.get_controller_data()
-        if ctrl is None:
-            return False, 0.0, 0.0, 0.0, 0.0
-        return (
-            False,
-            float(ctrl.get("left_trigger_value", 0.0)),
-            float(ctrl.get("right_trigger_value", 0.0)),
-            float(ctrl.get("left_squeeze_value", 0.0)),
-            float(ctrl.get("right_squeeze_value", 0.0)),
-        )
+def get_controller_inputs():
+    """Fetch controller button/trigger states from XRoboToolkit."""
     left_trigger = xrt.get_left_trigger()
     right_trigger = xrt.get_right_trigger()
     left_grip = xrt.get_left_grip()
@@ -635,20 +342,8 @@ def get_controller_inputs(reader=None):
     return left_menu_button, left_trigger, right_trigger, left_grip, right_grip
 
 
-def get_controller_axes(reader=None):
+def get_controller_axes():
     """Fetch joystick axes (lx, ly, rx, ry). Falls back to zeros if not available."""
-    if isinstance(reader, _ISAAC_TELEOP_READERS):
-        ctrl = reader.get_controller_data()
-        if ctrl is None:
-            return 0.0, 0.0, 0.0, 0.0
-        left_thumbstick = ctrl.get("left_thumbstick", [0.0, 0.0])
-        right_thumbstick = ctrl.get("right_thumbstick", [0.0, 0.0])
-        return (
-            float(left_thumbstick[0]),
-            float(left_thumbstick[1]),
-            float(right_thumbstick[0]),
-            float(right_thumbstick[1]),
-        )
     if xrt is None:
         return 0.0, 0.0, 0.0, 0.0
     try:
@@ -663,10 +358,8 @@ def get_controller_axes(reader=None):
         return 0.0, 0.0, 0.0, 0.0
 
 
-def get_menu_buttons(reader=None):
+def get_menu_buttons():
     """Fetch both menu buttons (left, right). Falls back to False if not available."""
-    if isinstance(reader, _ISAAC_TELEOP_READERS):
-        return False, False
     if xrt is None:
         return False, False
 
@@ -682,16 +375,8 @@ def get_menu_buttons(reader=None):
     return left, right
 
 
-def get_axis_clicks(reader=None):
+def get_axis_clicks():
     """Fetch both axis click buttons (left, right). Falls back to False if not available."""
-    if isinstance(reader, _ISAAC_TELEOP_READERS):
-        ctrl = reader.get_controller_data()
-        if ctrl is None:
-            return False, False
-        return (
-            float(ctrl.get("left_thumbstick_click", 0.0)) > 0.5,
-            float(ctrl.get("right_thumbstick_click", 0.0)) > 0.5,
-        )
     if xrt is None:
         return False, False
 
@@ -707,16 +392,8 @@ def get_axis_clicks(reader=None):
     return left, right
 
 
-def get_face_buttons(reader=None):
+def get_face_buttons():
     """Fetch primary face buttons A and X. Returns (a_pressed, x_pressed)."""
-    if isinstance(reader, _ISAAC_TELEOP_READERS):
-        ctrl = reader.get_controller_data()
-        if ctrl is None:
-            return False, False
-        return (
-            float(ctrl.get("right_primary_click", 0.0)) > 0.5,
-            float(ctrl.get("left_primary_click", 0.0)) > 0.5,
-        )
     if xrt is None:
         return False, False
     try:
@@ -727,18 +404,8 @@ def get_face_buttons(reader=None):
         return False, False
 
 
-def get_abxy_buttons(reader=None):
+def get_abxy_buttons():
     """Fetch A,B,X,Y face buttons as booleans (a,b,x,y)."""
-    if isinstance(reader, _ISAAC_TELEOP_READERS):
-        ctrl = reader.get_controller_data()
-        if ctrl is None:
-            return False, False, False, False
-        return (
-            float(ctrl.get("right_primary_click", 0.0)) > 0.5,
-            float(ctrl.get("right_secondary_click", 0.0)) > 0.5,
-            float(ctrl.get("left_primary_click", 0.0)) > 0.5,
-            float(ctrl.get("left_secondary_click", 0.0)) > 0.5,
-        )
     if xrt is None:
         return False, False, False, False
     try:
@@ -751,19 +418,7 @@ def get_abxy_buttons(reader=None):
         return False, False, False, False
 
 
-def compute_hand_joints_from_inputs(
-    left_solver, right_solver, left_trigger, left_grip, right_trigger, right_grip
-) -> tuple[np.ndarray, np.ndarray]:
-    """Compute left/right hand joints using IK solvers, or zeros if unavailable."""
-    if left_solver is not None and right_solver is not None:
-        left_finger_data = generate_finger_data("left", left_trigger, left_grip)
-        right_finger_data = generate_finger_data("right", right_trigger, right_grip)
-        left_hand_joints = left_solver({"position": left_finger_data})
-        right_hand_joints = right_solver({"position": right_finger_data})
-    else:
-        left_hand_joints = np.zeros((1, 7), dtype=np.float32)
-        right_hand_joints = np.zeros((1, 7), dtype=np.float32)
-    return left_hand_joints, right_hand_joints
+# compute_hand_joints_from_inputs is imported from gear_sonic.utils.teleop.common
 
 
 def _quat_lerp_normalized(q0: np.ndarray, q1: np.ndarray, alpha: float) -> np.ndarray:
@@ -823,18 +478,6 @@ class PicoReader:
         with self._lock:
             return self._latest
 
-    @property
-    def disconnected(self) -> bool:
-        return False
-
-    def clear_disconnect(self):
-        pass
-
-    def get_timestamp_ns(self) -> int:
-        if xrt is None:
-            return 0
-        return int(xrt.get_time_stamp_ns())
-
     def _run(self):
         last_report = time.time()
         while not self._stop.is_set():
@@ -891,18 +534,16 @@ def _pose_stream_common(
     with_g1_robot: bool = True,
     enable_waist_tracking: bool = False,
     enable_smpl_vis: bool = False,
-    reader=None,
 ):
     """Shared pose streaming loop used by run_pico."""
-    if reader is None:
-        if xrt is None:
-            raise ImportError(
-                "XRoboToolkit SDK not available. Install xrobotoolkit_sdk to run pose streaming."
-            )
+    if xrt is None:
+        raise ImportError(
+            "XRoboToolkit SDK not available. Install xrobotoolkit_sdk to run pose streaming."
+        )
 
-        # Create reader and start it
-        reader = PicoReader(max_queue_size=buffer_size)
-        reader.start()
+    # Create reader and start it
+    reader = PicoReader(max_queue_size=buffer_size)
+    reader.start()
 
     # Create 3-point pose processor with visualization settings
     three_point = ThreePointPose(
@@ -939,300 +580,9 @@ def _pose_stream_common(
         three_point.close()
 
 
-class ThreePointPose:
-    """
-    Encapsulates everything around calculating 3-point pose from SMPL input.
-
-    This includes:
-    - Processing SMPL poses to extract 3-point VR pose (L-Wrist, R-Wrist, Neck)
-    - Calibration logic to align VR poses with G1 robot
-    - Optional visualization of 3-point poses
-
-    Calibration is done in two steps:
-    1. Neck orientation: Captures initial neck orientation to align subsequent poses as upright
-    2. Wrist positions: Aligns wrist positions to match G1 robot key frame positions
-    """
-
-    # Kinematic chain constants for neck position (matches VR3PtPoseVisualizer)
-    TORSO_LINK_OFFSET_Z = 0.05  # meters from root to torso_link
-    NECK_LINK_LENGTH = 0.35  # meters from torso_link to neck along neck's local Z
-
-    def __init__(
-        self,
-        enable_vis_vr3pt: bool = False,
-        with_g1_robot: bool = True,
-        enable_waist_tracking: bool = False,
-        enable_smpl_vis: bool = False,
-        log_prefix: str = "ThreePointPose",
-        robot_model=None,
-    ):
-        """
-        Initialize 3-point pose processor.
-
-        Args:
-            enable_vis_vr3pt: Whether to enable VR 3pt pose visualization (requires display)
-            with_g1_robot: Whether to include G1 robot in visualization
-            enable_waist_tracking: Whether to enable waist tracking in visualization
-            enable_smpl_vis: Whether to render SMPL body joints in the VR3pt visualizer
-            log_prefix: Prefix for log messages
-            robot_model: Optional pre-instantiated RobotModel. If None, will create one.
-                        Used for FK-based calibration (no display required).
-        """
-        self.log_prefix = log_prefix
-        self.with_g1_robot = with_g1_robot
-        self.enable_waist_tracking = enable_waist_tracking
-        self.enable_smpl_vis = enable_smpl_vis
-
-        # Robot model for FK-based calibration (headless, no display required)
-        self._robot_model = robot_model
-        if self._robot_model is None:
-            from gear_sonic.data.robot_model.instantiation.g1 import (
-                instantiate_g1_robot_model,
-            )
-
-            self._robot_model = instantiate_g1_robot_model()
-            print(f"[{log_prefix}] Robot model loaded for FK calibration")
-
-        # Optional visualization (requires display + PyVista)
-        self.vr3pt_visualizer = None
-        if enable_vis_vr3pt:
-            if VR3PtPoseVisualizer is None:
-                raise ImportError(
-                    "VR3PtPoseVisualizer could not be imported but --vis_vr3pt was requested. "
-                    "Ensure pyvista is installed: pip install pyvista"
-                )
-            self.vr3pt_visualizer = VR3PtPoseVisualizer(
-                axis_length=0.08,
-                ball_radius=0.015,
-                with_g1_robot=with_g1_robot,
-                robot_model=self._robot_model,
-                enable_waist_tracking=enable_waist_tracking,
-                enable_smpl_vis=enable_smpl_vis,
-            )
-            self.vr3pt_visualizer.create_realtime_plotter(interactive=True)
-            g1_str = " with G1 robot" if with_g1_robot else ""
-            waist_str = " + waist tracking" if enable_waist_tracking else ""
-            smpl_str = " + SMPL body" if enable_smpl_vis else ""
-            print(f"[{log_prefix}] VR 3pt pose visualization enabled{g1_str}{waist_str}{smpl_str}")
-
-        # Calibration state — triggered explicitly by calibrate_now() or reset_with_measured_q()
-        self._calibration_pending = False
-        self._calibration_neck_quat_inv: np.ndarray | None = None  # inv(initial neck quat)
-        self._calibration_lwrist_offset: np.ndarray | None = None  # position offset
-        self._calibration_rwrist_offset: np.ndarray | None = None
-        self._calibration_lwrist_rot_offset: sRot | None = None  # orientation offset
-        self._calibration_rwrist_rot_offset: sRot | None = None
-        # Override robot q for FK during recalibration (e.g. measured joints for VR 3PT)
-        self._override_robot_q: np.ndarray | None = None
-
-    @property
-    def is_pending(self) -> bool:
-        """Check if calibration is pending."""
-        return self._calibration_pending
-
-    @property
-    def is_calibrated(self) -> bool:
-        """Check if calibration has been captured."""
-        return self._calibration_neck_quat_inv is not None
-
-    def process_smpl_pose(
-        self,
-        smpl_pose_np: np.ndarray,
-        smpl_joints_local: np.ndarray | None = None,
-    ) -> np.ndarray:
-        """
-        Process SMPL pose to extract and calibrate 3-point VR pose.
-
-        Args:
-            smpl_pose_np: np.ndarray shape (24, 7) - 24 SMPL joints
-            smpl_joints_local: Optional np.ndarray shape (24, 3) - SMPL local joint
-                               positions for body visualization. If provided and SMPL
-                               visualization is enabled, the joint spheres are updated.
-
-        Returns:
-            vr_3pt_pose: np.ndarray shape (3, 7) - Calibrated 3-point pose
-                         [L-Wrist, R-Wrist, Neck], each row [x, y, z, qw, qx, qy, qz]
-        """
-        # Extract raw 3-point pose from SMPL
-        vr_3pt_pose_raw = _process_3pt_pose(smpl_pose_np)
-
-        # Capture calibration on first valid frame (or after reset)
-        if self._calibration_pending:
-            self._capture_calibration(vr_3pt_pose_raw)
-
-        # Apply calibration to get the final pose
-        vr_3pt_pose = self._apply_calibration(vr_3pt_pose_raw)
-
-        if self.vr3pt_visualizer is not None:
-            self.vr3pt_visualizer.update_from_vr_pose(vr_3pt_pose, waist_scale=1.0)
-            if smpl_joints_local is not None:
-                self.vr3pt_visualizer.update_smpl_joints(smpl_joints_local)
-            self.vr3pt_visualizer.render()
-
-        return vr_3pt_pose
-
-    def close(self) -> None:
-        """Close and cleanup visualizer resources."""
-        if self.vr3pt_visualizer is not None:
-            try:
-                self.vr3pt_visualizer.close()
-            except Exception as e:
-                print(f"[{self.log_prefix}] Warning: Error closing VR3pt visualizer: {e}")
-
-    def calibrate_now(self, body_poses_np: np.ndarray) -> bool:
-        """Calibrate using current SMPL frame against FK of all-zero body joints.
-        Operator should be in zero-reference pose when calling this."""
-        try:
-            vr_3pt_pose_raw = _process_3pt_pose(body_poses_np)
-            self._override_robot_q = np.zeros(29, dtype=np.float64)
-            self._capture_calibration(vr_3pt_pose_raw)
-            print(f"[{self.log_prefix}] Calibration completed (zero-pose reference)")
-            return True
-        except Exception as e:
-            print(f"[{self.log_prefix}] Calibration failed: {e}")
-            import traceback
-
-            traceback.print_exc()
-            return False
-
-    def _capture_calibration(self, vr_3pt_pose: np.ndarray) -> None:
-        """Capture calibration offsets from vr_3pt_pose against G1 FK reference.
-        If neck calibration already exists (e.g. from calibrate_now), it is preserved
-        to avoid jumps from SMPL noise during recalibration."""
-
-        # Step 1: Neck orientation — only capture if not already set
-        if self._calibration_neck_quat_inv is None:
-            neck_quat_wxyz = vr_3pt_pose[2, 3:].copy()
-            neck_rot = sRot.from_quat(neck_quat_wxyz, scalar_first=True)
-            self._calibration_neck_quat_inv = neck_rot.inv().as_quat(scalar_first=True)
-        calib_inv_rot = sRot.from_quat(self._calibration_neck_quat_inv, scalar_first=True)
-
-        # Step 2: Rotate VR wrist positions/orientations by neck inverse
-        lwrist_pos_corrected = calib_inv_rot.apply(vr_3pt_pose[0, :3].copy())
-        rwrist_pos_corrected = calib_inv_rot.apply(vr_3pt_pose[1, :3].copy())
-        lwrist_rot_corrected = calib_inv_rot * sRot.from_quat(vr_3pt_pose[0, 3:], scalar_first=True)
-        rwrist_rot_corrected = calib_inv_rot * sRot.from_quat(vr_3pt_pose[1, 3:], scalar_first=True)
-
-        # Step 3: Get G1 FK reference poses
-        if self._robot_model is None:
-            raise RuntimeError(
-                "Robot model is required for calibration but was not loaded. "
-                "Ensure the G1 robot model and URDF are available."
-            )
-        if get_g1_key_frame_poses is None:
-            raise RuntimeError(
-                "get_g1_key_frame_poses could not be imported. "
-                "Ensure gear_sonic.utils.teleop.vis.vr3pt_pose_visualizer is available."
-            )
-
-        # Convert 29-DOF override to full model config if needed
-        if self._override_robot_q is not None:
-            robot_q = self._robot_model.get_configuration_from_actuated_joints(
-                body_actuated_joint_values=self._override_robot_q[:29]
-            )
-        else:
-            robot_q = None
-        g1_poses = get_g1_key_frame_poses(self._robot_model, q=robot_q)
-
-        g1_lwrist_pos = g1_poses["left_wrist"]["position"]
-        g1_rwrist_pos = g1_poses["right_wrist"]["position"]
-        g1_lwrist_rot = sRot.from_quat(
-            g1_poses["left_wrist"]["orientation_wxyz"], scalar_first=True
-        )
-        g1_rwrist_rot = sRot.from_quat(
-            g1_poses["right_wrist"]["orientation_wxyz"], scalar_first=True
-        )
-
-        # Compute position offsets: calibrated = neck_corrected - offset
-        self._calibration_lwrist_offset = lwrist_pos_corrected - g1_lwrist_pos
-        self._calibration_rwrist_offset = rwrist_pos_corrected - g1_rwrist_pos
-
-        # Compute orientation offsets: calibrated = rot_offset * neck_corrected
-        self._calibration_lwrist_rot_offset = g1_lwrist_rot * lwrist_rot_corrected.inv()
-        self._calibration_rwrist_rot_offset = g1_rwrist_rot * rwrist_rot_corrected.inv()
-
-        self._calibration_pending = False
-        self._override_robot_q = None
-
-        # Log summary
-        source = "override q" if g1_lwrist_pos.any() else "default/zero"
-        print(
-            f"[{self.log_prefix}] Calibration captured (FK ref: {source}):\n"
-            f"  L-Wrist pos offset: [{self._calibration_lwrist_offset[0]:.4f}, "
-            f"{self._calibration_lwrist_offset[1]:.4f}, {self._calibration_lwrist_offset[2]:.4f}]\n"
-            f"  R-Wrist pos offset: [{self._calibration_rwrist_offset[0]:.4f}, "
-            f"{self._calibration_rwrist_offset[1]:.4f}, {self._calibration_rwrist_offset[2]:.4f}]"
-        )
-
-    def _apply_calibration(self, vr_3pt_pose: np.ndarray) -> np.ndarray:
-        """Apply stored calibration offsets to raw VR 3-point pose."""
-        if self._calibration_neck_quat_inv is None:
-            return vr_3pt_pose
-
-        calibrated = vr_3pt_pose.copy()
-        calib_inv_rot = sRot.from_quat(self._calibration_neck_quat_inv, scalar_first=True)
-
-        # Neck orientation: calibrated = inv(initial) * current
-        neck_rot = sRot.from_quat(vr_3pt_pose[2, 3:], scalar_first=True)
-        calibrated[2, 3:] = (calib_inv_rot * neck_rot).as_quat(scalar_first=True)
-
-        # Wrist positions: rotate by neck inverse, then subtract offset
-        if self._calibration_lwrist_offset is not None:
-            calibrated[0, :3] = (
-                calib_inv_rot.apply(vr_3pt_pose[0, :3]) - self._calibration_lwrist_offset
-            )
-        if self._calibration_rwrist_offset is not None:
-            calibrated[1, :3] = (
-                calib_inv_rot.apply(vr_3pt_pose[1, :3]) - self._calibration_rwrist_offset
-            )
-
-        # Wrist orientations: rot_offset * (neck_inv * current)
-        if self._calibration_lwrist_rot_offset is not None:
-            lw_corrected = calib_inv_rot * sRot.from_quat(vr_3pt_pose[0, 3:], scalar_first=True)
-            calibrated[0, 3:] = (self._calibration_lwrist_rot_offset * lw_corrected).as_quat(
-                scalar_first=True
-            )
-        if self._calibration_rwrist_rot_offset is not None:
-            rw_corrected = calib_inv_rot * sRot.from_quat(vr_3pt_pose[1, 3:], scalar_first=True)
-            calibrated[1, 3:] = (self._calibration_rwrist_rot_offset * rw_corrected).as_quat(
-                scalar_first=True
-            )
-
-        # Neck position via kinematic chain: root → torso_link (+Z) → neck (along calibrated Z)
-        neck_z = sRot.from_quat(calibrated[2, 3:], scalar_first=True).apply([0, 0, 1])
-        calibrated[2, :3] = (
-            np.array([0, 0, self.TORSO_LINK_OFFSET_Z]) + self.NECK_LINK_LENGTH * neck_z
-        ).astype(np.float32)
-
-        return calibrated
-
-    def _clear_calibration(self):
-        """Clear all calibration state."""
-        self._calibration_neck_quat_inv = None
-        self._calibration_lwrist_offset = None
-        self._calibration_rwrist_offset = None
-        self._calibration_lwrist_rot_offset = None
-        self._calibration_rwrist_rot_offset = None
-        self._override_robot_q = None
-
-    def reset(self) -> None:
-        """Reset calibration. Next process_smpl_pose() call will recalibrate."""
-        self._clear_calibration()
-        self._calibration_pending = True
-        print(f"[{self.log_prefix}] Calibration reset, will re-calibrate on next frame")
-
-    def reset_with_measured_q(self, body_q_measured: np.ndarray) -> None:
-        """Recalibrate wrist offsets using measured robot joints (29 DOFs).
-        Preserves neck calibration to avoid jumps from SMPL noise.
-        Next process_smpl_pose() will recompute wrist offsets against FK of these joints."""
-        # Preserve neck calibration — only clear wrist offsets
-        self._calibration_lwrist_offset = None
-        self._calibration_rwrist_offset = None
-        self._calibration_lwrist_rot_offset = None
-        self._calibration_rwrist_rot_offset = None
-        self._override_robot_q = body_q_measured.copy()
-        self._calibration_pending = True
-        print(f"[{self.log_prefix}] Wrist recalibration pending (neck preserved, measured q)")
+# ThreePointPose is imported from gear_sonic.utils.teleop.common.
+# The PICO manager uses three_point.process(_process_3pt_pose(smpl_data))
+# to feed SMPL-derived 3-point poses into the device-agnostic calibration.
 
 
 class PoseStreamer:
@@ -1241,7 +591,7 @@ class PoseStreamer:
     def __init__(
         self,
         socket,
-        reader: "PicoReader | input_readers.IsaacTeleopReader",
+        reader: PicoReader,
         three_point: ThreePointPose,
         num_frames_to_send: int,
         target_fps: int,
@@ -1348,11 +698,11 @@ class PoseStreamer:
         latest_data = compute_from_body_poses(
             self.parent_indices, self.device, sample["body_poses_np"]
         )
-        left_menu_button, left_trigger, right_trigger, left_grip, right_grip = get_controller_inputs(
-            self.reader
+        (left_menu_button, left_trigger, right_trigger, left_grip, right_grip) = (
+            get_controller_inputs()
         )
         # Get A and B button states for data collection control
-        a_pressed, b_pressed, x_pressed, y_pressed = get_abxy_buttons(self.reader)
+        a_pressed, b_pressed, x_pressed, y_pressed = get_abxy_buttons()
 
         # Data collection toggle logic (edge-triggered)
         # Left grip + A = toggle_data_collection
@@ -1475,15 +825,14 @@ class PoseStreamer:
         joint_pos[G1_R_WRIST_PITCH_IDX] = g1_r_wrist_pitch[0]
         joint_pos[G1_R_WRIST_YAW_IDX] = g1_r_wrist_yaw[0]
 
-        # Process SMPL pose to get calibrated 3-point VR pose and update visualization
-        # Pass SMPL local joints for optional body visualization in the VR3Pt viewer
         smpl_joints_for_vis = (
             latest_data["smpl_joints_local"].detach().cpu().numpy()[0]
             if self.three_point.enable_smpl_vis
             else None
         )
-        vr_3pt_pose = self.three_point.process_smpl_pose(
-            sample["body_poses_np"], smpl_joints_local=smpl_joints_for_vis
+        vr_3pt_pose = self.three_point.process(
+            _process_3pt_pose(sample["body_poses_np"]),
+            smpl_joints_local=smpl_joints_for_vis,
         )
         ##### From @Jiefeng for directly setting the joint position ######
 
@@ -1503,7 +852,7 @@ class PoseStreamer:
             self.buffer_cleared = False
 
         # Get joystick axes for yaw accumulation
-        _, _, rx, _ = get_controller_axes(self.reader)
+        _, _, rx, _ = get_controller_axes()
         self.yaw_accumulator.update(rx, self.frame_time)
 
         # Only send if buffer is full and we're not waiting for fresh data
@@ -1565,37 +914,6 @@ class PoseStreamer:
         self.frame_start = time.time()
 
 
-def _init_input_source(
-    input_source: str,
-    buffer_size: int,
-) -> "PicoReader | input_readers.IsaacTeleopReader":
-    """Create, start, and wait for readiness of the requested teleop input source."""
-    if input_source == "isaac-teleop":
-        reader = input_readers.IsaacTeleopReader(max_queue_size=buffer_size)
-        reader.start()
-        print("Using Isaac Teleop (in-process CloudXR / DeviceIO), waiting for data...")
-        while reader.get_latest() is None:
-            print("waiting for Isaac Teleop body data (connect the headset to CloudXR)...")
-            time.sleep(1)
-        return reader
-
-    if xrt is None:
-        raise ImportError(
-            "XRoboToolkit SDK not available. Install xrobotoolkit_sdk to run Pico streaming."
-        )
-
-    subprocess.Popen(["bash", "/opt/apps/roboticsservice/runService.sh"])
-    xrt.init()
-    print("Waiting for body tracking data...")
-    while not xrt.is_body_data_available():
-        print("waiting for body data...")
-        time.sleep(1)
-
-    reader = PicoReader(max_queue_size=buffer_size)
-    reader.start()
-    return reader
-
-
 def run_pico(
     buffer_size: int = 15,
     port: int = 5556,
@@ -1608,10 +926,18 @@ def run_pico(
     with_g1_robot: bool = True,
     enable_waist_tracking: bool = False,
     enable_smpl_vis: bool = False,
-    input_source: str = "xrt",
 ):
-    """Run body tracking with real-time visualization and ZMQ streaming."""
-    reader = _init_input_source(input_source, buffer_size)
+    """Run Pico body tracking with real-time visualization and ZMQ streaming."""
+    if xrt is None:
+        raise ImportError(
+            "XRoboToolkit SDK not available. Install xrobotoolkit_sdk to run Pico streaming."
+        )
+    subprocess.Popen(["bash", "/opt/apps/roboticsservice/runService.sh"])
+    xrt.init()
+    print("Waiting for body tracking data...")
+    while not xrt.is_body_data_available():
+        print("waiting for body data...")
+        time.sleep(1)
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
     socket.bind(f"tcp://*:{port}")
@@ -1638,7 +964,6 @@ def run_pico(
             with_g1_robot=with_g1_robot,
             enable_waist_tracking=enable_waist_tracking,
             enable_smpl_vis=enable_smpl_vis,
-            reader=reader,
         )
     finally:
         socket.close()
@@ -1646,69 +971,7 @@ def run_pico(
         print("Threads stopped, ZMQ socket closed")
 
 
-class FeedbackReader:
-    """Reads feedback from robot via ZMQ and processes measured upper body position to use as frozen targets."""
-
-    def __init__(self, zmq_feedback_host: str = "localhost", zmq_feedback_port: int = 5557):
-        self.poller = ZMQPoller(host=zmq_feedback_host, port=zmq_feedback_port, topic="g1_debug")
-
-        self.upper_body_joint_indices = self._get_upper_body_joint_indices()
-
-        self.upper_body_position_target = None
-        self.left_hand_position_target = None
-        self.right_hand_position_target = None
-        # Full body joint configuration (29 DOFs) as measured from robot,
-        # used for FK when recalibrating VR 3PT tracking against actual robot pose
-        self.full_body_q_measured: np.ndarray | None = None
-
-    def _get_upper_body_joint_indices(self) -> list[int]:
-        # TODO: get from robot model, not hardcoded
-        # robot_model = instantiate_g1_robot_model()
-        # return robot_model.get_joint_group_indices("upper_body")
-        return [12, 13, 14, 15, 22, 16, 23, 17, 24, 18, 25, 19, 26, 20, 27, 21, 28]
-
-    def poll_feedback(self):
-        """Poll for feedback once, and update internal state."""
-        (
-            self.upper_body_position_target,
-            self.left_hand_position_target,
-            self.right_hand_position_target,
-            self.full_body_q_measured,
-        ) = self._process_upper_body_position_targets()
-        print("[PlannerLoop] Saved upper body position target:", self.upper_body_position_target)
-
-    def _process_upper_body_position_targets(
-        self,
-    ) -> tuple[np.ndarray | None, np.ndarray | None, np.ndarray | None, np.ndarray | None]:
-        data = self.poller.get_data()
-
-        if data is None:
-            print("[PlannerLoop] No feedback data received")
-            return None, None, None, None
-
-        unpacked = msgpack.unpackb(data, raw=False)
-        full_body_q = None
-        if "body_q_measured" in unpacked:
-            body_q_swizzled = unpacked["body_q_measured"]
-            full_body_q = np.array(body_q_swizzled, dtype=np.float64)
-            body_q = [body_q_swizzled[i] for i in self.upper_body_joint_indices]
-        else:
-            print("[PlannerLoop] body_q_measured not in feedback data")
-            body_q = None
-
-        if "left_hand_q_measured" in unpacked:
-            left_hand_q = unpacked["left_hand_q_measured"]
-        else:
-            print("[PlannerLoop] left_hand_q_measured not in feedback data")
-            left_hand_q = None
-
-        if "right_hand_q_measured" in unpacked:
-            right_hand_q = unpacked["right_hand_q_measured"]
-        else:
-            print("[PlannerLoop] right_hand_q_measured not in feedback data")
-            right_hand_q = None
-
-        return body_q, left_hand_q, right_hand_q, full_body_q
+# FeedbackReader is imported from gear_sonic.utils.teleop.common
 
 
 class PlannerStreamer:
@@ -1717,7 +980,7 @@ class PlannerStreamer:
     def __init__(
         self,
         socket,
-        reader: "PicoReader | input_readers.IsaacTeleopReader",
+        reader: PicoReader,
         three_point: ThreePointPose,
         poll_hz: int = 20,
         zmq_feedback_host: str = "localhost",
@@ -1775,13 +1038,13 @@ class PlannerStreamer:
         """Execute one iteration of the planner control loop."""
         try:
             # Avoid sending old commands if XRT timestamp hasn't advanced, in case of headset disconnect
-            xrt_timestamp = self.reader.get_timestamp_ns()
+            xrt_timestamp = xrt.get_time_stamp_ns()
             if xrt_timestamp == self.last_xrt_timestamp:
                 return
             self.last_xrt_timestamp = xrt_timestamp
 
             # A+B => next mode; X+Y => previous mode (rising edges)
-            a_pressed, b_pressed, x_pressed, y_pressed = get_abxy_buttons(self.reader)
+            a_pressed, b_pressed, x_pressed, y_pressed = get_abxy_buttons()
             ab_now = bool(a_pressed) and bool(b_pressed)
             xy_now = bool(x_pressed) and bool(y_pressed)
             if ab_now and not self.prev_ab:
@@ -1794,7 +1057,7 @@ class PlannerStreamer:
             self.prev_xy = xy_now
 
             # Read axes/joysticks to control movement, facing, speed and mode
-            lx, ly, rx, ry = get_controller_axes(self.reader)
+            lx, ly, rx, ry = get_controller_axes()
 
             # Facing from RIGHT stick: continuous yaw based on rx (right = turn right, left = turn left)
             facing = self.yaw_accumulator.update(rx, self.dt)
@@ -1844,7 +1107,9 @@ class PlannerStreamer:
                 sample = self.reader.get_latest()
                 if sample is not None:
                     print("[PlannerLoop] Sending VR 3-point pose as target")
-                    vr_3pt_pose = self.three_point.process_smpl_pose(sample["body_poses_np"])
+                    vr_3pt_pose = self.three_point.process(
+                        _process_3pt_pose(sample["body_poses_np"])
+                    )
                     vr_3pt_position = (vr_3pt_pose[:, :3].flatten()).tolist()
                     vr_3pt_orientation = vr_3pt_pose[:, 3:].flatten().tolist()
 
@@ -1856,7 +1121,7 @@ class PlannerStreamer:
                     right_trigger,
                     left_grip,
                     right_grip,
-                ) = get_controller_inputs(self.reader)
+                ) = get_controller_inputs()
                 lh_joints, rh_joints = compute_hand_joints_from_inputs(
                     self.left_hand_ik_solver,
                     self.right_hand_ik_solver,
@@ -1911,7 +1176,6 @@ def run_pico_manager(
     with_g1_robot: bool = True,
     enable_waist_tracking: bool = False,
     enable_smpl_vis: bool = False,
-    input_source: str = "xrt",
 ):
     """
     Manager: creates shared PUB socket and runs pose/planner streamers based on current mode.
@@ -1919,7 +1183,16 @@ def run_pico_manager(
       A+X: Toggle between planner and pose mode
       A+B+X+Y: Toggle policy start/stop
     """
-    reader = _init_input_source(input_source, buffer_size)
+    if xrt is None:
+        raise ImportError(
+            "XRoboToolkit SDK not available. Install xrobotoolkit_sdk to run the manager."
+        )
+    subprocess.Popen(["bash", "/opt/apps/roboticsservice/runService.sh"])
+    xrt.init()
+    print("Waiting for body tracking data...")
+    while not xrt.is_body_data_available():
+        print("waiting for body data...")
+        time.sleep(1)
 
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
@@ -1934,6 +1207,10 @@ def run_pico_manager(
             print(f"  {mode.value}: {mode.name}")
     except Exception:
         pass
+
+    # Create shared reader and 3-point pose processor
+    reader = PicoReader(max_queue_size=buffer_size)
+    reader.start()
 
     three_point = ThreePointPose(
         enable_vis_vr3pt=enable_vis_vr3pt,
@@ -1992,11 +1269,11 @@ def run_pico_manager(
         prev_left_axis_click = False
         while True:
             # Poll Pico controller for buttons/axes
-            a_pressed, b_pressed, x_pressed, y_pressed = get_abxy_buttons(reader)
+            a_pressed, b_pressed, x_pressed, y_pressed = get_abxy_buttons()
 
-            left_menu_button, _, _, left_grip_mgr, _ = get_controller_inputs(reader)
+            left_menu_button, _, _, left_grip_mgr, _ = get_controller_inputs()
 
-            left_axis_click, _ = get_axis_clicks(reader)
+            left_axis_click, _ = get_axis_clicks()
 
             # Rising edge: A+X pressed together -> toggle POSE/PLANNER mode
             ax_pressed = (a_pressed) and (x_pressed)
@@ -2011,11 +1288,9 @@ def run_pico_manager(
             if current_mode == StreamMode.OFF:
                 if start_combo and not prev_start_combo:
                     new_mode = StreamMode.PLANNER
-                    # Calibrate VR 3pt tracking NOW: operator should be in zero-ref pose.
-                    # Uses the current Pico SMPL frame + FK of all-zero body joints.
                     sample = reader.get_latest()
                     if sample is not None:
-                        three_point.calibrate_now(sample["body_poses_np"])
+                        three_point.calibrate_now(_process_3pt_pose(sample["body_poses_np"]))
                     else:
                         print("[Manager] WARNING: No SMPL data available for calibration")
 
@@ -2241,16 +1516,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable SMPL body joint visualization (24 joint spheres) in the VR3pt viewer",
     )
-    parser.add_argument(
-        "--input-source",
-        type=str,
-        default="xrt",
-        choices=["xrt", "isaac-teleop"],
-        help=(
-            "Input source: 'xrt' for XRoboToolkit SDK (default), "
-            "'isaac-teleop' for in-process IsaacTeleop / CloudXR DeviceIO"
-        ),
-    )
     args = parser.parse_args()
 
     # Standalone VR3Pt test modes (exit after finishing)
@@ -2291,7 +1556,6 @@ if __name__ == "__main__":
             with_g1_robot=with_g1_robot,
             enable_waist_tracking=args.waist_tracking,
             enable_smpl_vis=args.vis_smpl,
-            input_source=args.input_source,
         )
     else:
         # Run legacy single-thread pose streaming
@@ -2307,5 +1571,4 @@ if __name__ == "__main__":
             with_g1_robot=with_g1_robot,
             enable_waist_tracking=args.waist_tracking,
             enable_smpl_vis=args.vis_smpl,
-            input_source=args.input_source,
         )

@@ -1,0 +1,36 @@
+# Canonical "distance walking + 90 deg turn" demo for the X2 heuristic planner.
+#
+# Exercises:
+#   - idle -> walk entry blend (12 frames)
+#   - continuous walk for ~3 seconds
+#   - walk -> turn blend (6 frames)
+#   - in-place 90 deg pivot
+#   - turn -> back-step blend (6 frames)
+#   - back-step half-foot for one stride
+#   - back-step -> idle return blend (6 frames)
+#
+# Acceptance criteria (D.5/D.6 in the planner plan):
+#   - 0 ZMQ pose-message drops
+#   - max per-tick joint jump <= 0.15 rad
+#   - max yaw jump <= 6 deg per tick
+#   - final XY drift after the cycle <= 0.5 m from start
+#   - X2 sim deploy survives the run with no fall (validated separately)
+
+commands:
+  - intent: idle
+    magnitude: default
+    hold_seconds: 1.0
+
+  - intent: walk
+    magnitude: forward
+    hold_seconds: 0.5
+
+  - intent: turn_left
+    magnitude: deg_90
+
+  - intent: back_step
+    magnitude: half_ft
+
+  - intent: idle
+    magnitude: default
+    hold_seconds: 1.5

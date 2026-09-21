@@ -1,0 +1,46 @@
+# X2 lean-cut requirements (validated 2026-07-28 on Ubuntu / Python 3.10.19).
+#
+# This file lists ONLY the packages you install by hand. Everything else
+# (mujoco, scipy, numpy, pyzmq, ... ) is pulled in transitively by the two
+# editable installs below.
+#
+# Install sequence (order matters — torch CPU first so gear_sonic's
+# `torch>=2.4.0` dependency resolves to the already-installed CPU wheel
+# instead of pulling the multi-GB CUDA wheel from PyPI):
+#
+#   python3.10 -m venv .venv
+#   .venv/bin/pip install --upgrade pip
+#   .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   .venv/bin/pip install -e "./gear_sonic[sim]"
+#   .venv/bin/pip install onnxruntime
+# gamepad bridge (pad_locomotion_bridge.py) reads sticks via pygame/SDL
+pygame
+# Quest3 WebXR stream server (quest3_reader.py wss endpoint)
+websockets
+#   .venv/bin/pip install -e ./motionbricks
+#
+# Or, non-editable, via this file (still install torch CPU first):
+#   .venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   .venv/bin/pip install -r requirements-x2.txt
+
+# GPU users: drop the --index-url and let pip pick the CUDA wheel instead.
+# Validated with torch==2.13.0+cpu.
+torch>=2.4.0
+
+# Needed by gear_sonic/scripts/eval_x2_mujoco_onnx.py and the ONNX deploy
+# path. NOT declared in any gear_sonic extra (gap) — must be installed
+# explicitly. Validated with onnxruntime==1.23.2.
+onnxruntime
+# gamepad bridge (pad_locomotion_bridge.py) reads sticks via pygame/SDL
+pygame
+# Quest3 WebXR stream server (quest3_reader.py wss endpoint)
+websockets
+
+# The two first-party packages (editable installs recommended; see above).
+# gear_sonic[sim] brings: mujoco, tyro, pin, pyyaml, pyzmq, msgpack,
+# msgpack-numpy, opencv-python + base deps (numpy==1.26.4, scipy==1.15.3,
+# joblib, tqdm, easydict, loguru).
+# motionbricks brings: hydra-core, omegaconf, pytorch-lightning, transformers,
+# pynput, matplotlib, vector-quantize-pytorch, colorlog, adam-atan2-pytorch.
+-e ./gear_sonic[sim]
+-e ./motionbricks

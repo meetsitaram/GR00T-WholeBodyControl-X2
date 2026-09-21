@@ -1,0 +1,88 @@
+# push_to_pc2.sh manifest -- the DEFAULT file set for a pad-ritual PC2.
+#
+# <local path (repo-relative, or ${VAR}-prefixed absolute)>    <PC2 absolute path>
+#
+# Placeholders (expanded by push_to_pc2.sh from the environment, abort if unset):
+#   ${PC2_PREFIX}  robot install prefix (default /home/run/gear-sonic).
+#   ${X2_MODELS}   directory holding YOUR exported ONNX files (see MODELS.md);
+#                  only needed for the planner graph line (and for the
+#                  commented bring-your-own SONIC lines) -- the SONIC set is
+#                  shipped in-repo (gear_sonic_deploy/models/).
+# Anything else absolute must be edited to an existing local path.
+#
+# The deploy C++ + helper scripts go through pc2_bringup.sh (rsync + colcon on
+# the Orin), not this list. This list is for the PLANNER / PAD / RITUAL side.
+gear_sonic/scripts/pc2_kplanner_onnx.py            ${PC2_PREFIX}/pc2_kplanner_onnx.py
+gear_sonic/scripts/pad_locomotion_bridge.py        ${PC2_PREFIX}/pad_locomotion_bridge.py
+gear_sonic_deploy/scripts/x2_motor_monitor.py      ${PC2_PREFIX}/gear_sonic_deploy/scripts/x2_motor_monitor.py
+x2_pc2/robot_env.env                               ${PC2_PREFIX}/robot_env.env
+x2_pc2/pad_bindings.env                            ${PC2_PREFIX}/pad_bindings.env
+x2_pc2/ritual_start_sonic.sh                       ${PC2_PREFIX}/ritual_start_sonic.sh
+x2_pc2/ritual_start_demo.sh                        ${PC2_PREFIX}/ritual_start_demo.sh
+x2_pc2/start_x2_deploy_ritual.sh                   ${PC2_PREFIX}/start_x2_deploy_ritual.sh
+x2_pc2/start_x2_pose_watchdog_local.sh             ${PC2_PREFIX}/start_x2_pose_watchdog_local.sh
+# ritual-called GENERATED bodies (the ritual launches them from log/)
+x2_pc2/start_x2_hand_bridge.sh                     ${PC2_PREFIX}/log/start_x2_hand_bridge.sh
+x2_pc2/start_x2_motor_monitor.sh                   ${PC2_PREFIX}/log/start_x2_motor_monitor.sh
+# pad chain (systemd unit is STAGED here; the operator sudo-installs it)
+gear_sonic/scripts/pc2_pad_daemon.py               ${PC2_PREFIX}/pc2_pad_daemon.py
+gear_sonic/scripts/x2_pad_autopair.py              ${PC2_PREFIX}/x2_pad_autopair.py
+x2_pc2/x2-pad-autopair.service                     ${PC2_PREFIX}/x2-pad-autopair.service
+# whole-body token service (frozen-G1 token set; unused by the dual-head ritual)
+gear_sonic/scripts/pc2_pico_token_service.py       ${PC2_PREFIX}/gear_sonic/scripts/pc2_pico_token_service.py
+# gear_sonic python modules the PC2 scripts import (also staged by pc2_bringup.sh step 7b;
+# listed here so an incremental push keeps them current). Both prefixes: ${PC2_PREFIX}/gear_sonic
+# (token service sys.path) and ${PC2_PREFIX}/planner_stack/gear_sonic (kplanner PYTHONPATH).
+gear_sonic/__init__.py                                 ${PC2_PREFIX}/gear_sonic/__init__.py
+gear_sonic/__init__.py                                 ${PC2_PREFIX}/planner_stack/gear_sonic/__init__.py
+gear_sonic/utils/__init__.py                           ${PC2_PREFIX}/gear_sonic/utils/__init__.py
+gear_sonic/utils/__init__.py                           ${PC2_PREFIX}/planner_stack/gear_sonic/utils/__init__.py
+gear_sonic/utils/teleop/estop_gesture.py               ${PC2_PREFIX}/estop_gesture.py
+gear_sonic/utils/teleop/estop_gesture.py               ${PC2_PREFIX}/gear_sonic/utils/teleop/estop_gesture.py
+gear_sonic/utils/teleop/smpl_obs.py                    ${PC2_PREFIX}/gear_sonic/utils/teleop/smpl_obs.py
+gear_sonic/utils/teleop/smpl_obs.py                    ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/smpl_obs.py
+gear_sonic/utils/teleop/x2_hand_retarget.py            ${PC2_PREFIX}/gear_sonic/utils/teleop/x2_hand_retarget.py
+gear_sonic/utils/teleop/x2_hand_retarget.py            ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/x2_hand_retarget.py
+gear_sonic/utils/teleop/zmq/zmq_planner_sender.py      ${PC2_PREFIX}/gear_sonic/utils/teleop/zmq/zmq_planner_sender.py
+gear_sonic/utils/teleop/zmq/zmq_planner_sender.py      ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/zmq/zmq_planner_sender.py
+gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py   ${PC2_PREFIX}/gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py
+gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py   ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/zmq/zmq_packed_message_decoder.py
+gear_sonic/utils/teleop/zmq/zmq_poller.py              ${PC2_PREFIX}/gear_sonic/utils/teleop/zmq/zmq_poller.py
+gear_sonic/utils/teleop/zmq/zmq_poller.py              ${PC2_PREFIX}/planner_stack/gear_sonic/utils/teleop/zmq/zmq_poller.py
+gear_sonic/utils/pose_pipeline/__init__.py             ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/__init__.py
+gear_sonic/utils/pose_pipeline/__init__.py             ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/__init__.py
+gear_sonic/utils/pose_pipeline/wire.py                 ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/wire.py
+gear_sonic/utils/pose_pipeline/wire.py                 ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/wire.py
+gear_sonic/utils/pose_pipeline/wire.py                 ${PC2_PREFIX}/ws/src/gear_sonic/utils/pose_pipeline/wire.py
+gear_sonic/utils/pose_pipeline/fallback.py             ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/fallback.py
+gear_sonic/utils/pose_pipeline/fallback.py             ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/fallback.py
+gear_sonic/utils/pose_pipeline/fallback.py             ${PC2_PREFIX}/ws/src/gear_sonic/utils/pose_pipeline/fallback.py
+gear_sonic/utils/pose_pipeline/clamp.py                ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/clamp.py
+gear_sonic/utils/pose_pipeline/clamp.py                ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/clamp.py
+gear_sonic/utils/pose_pipeline/arbitrate.py            ${PC2_PREFIX}/gear_sonic/utils/pose_pipeline/arbitrate.py
+gear_sonic/utils/pose_pipeline/arbitrate.py            ${PC2_PREFIX}/planner_stack/gear_sonic/utils/pose_pipeline/arbitrate.py
+# tuning presets (the whole dir is also staged by pc2_bringup.sh)
+gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0_inc_waistmc.yaml   ${PC2_PREFIX}/gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0_inc_waistmc.yaml
+gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0.yaml   ${PC2_PREFIX}/gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0.yaml
+gear_sonic_deploy/configs/real_deploy_tuning/bigrun.yaml             ${PC2_PREFIX}/gear_sonic_deploy/configs/real_deploy_tuning/bigrun.yaml
+#
+# MODELS. The SONIC set is the SHIPPED default (git-lfs, tracked -> gate 2
+# "committed" applies; `git lfs pull` first if they are pointer files). Slot
+# paths on the right are what robot_env.env.template points X2_RITUAL_MODEL /
+# X2_WB_* at. pc2_bringup.sh step 9 stages the same four files.
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_dual.onnx             ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_dual.onnx
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1.onnx               ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_g1.onnx
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1_token.onnx         ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_g1_token.onnx
+gear_sonic_deploy/models/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx   ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx
+# Bring-your-own alternative (MODELS.md): replace the four lines above with
+# your exported set and point X2_RITUAL_MODEL / X2_WB_* in robot_env.env at it:
+#${X2_MODELS}/<your_model>_dual.onnx               ${PC2_PREFIX}/policies/<your_model>_dual.onnx
+#${X2_MODELS}/<your_model>_g1.onnx                 ${PC2_PREFIX}/policies/<your_model>_g1.onnx
+#${X2_MODELS}/<your_model>_g1_token.onnx           ${PC2_PREFIX}/policies/<your_model>_g1_token.onnx
+#${X2_MODELS}/<your_model>_smpl_tokenizer.onnx     ${PC2_PREFIX}/policies/<your_model>_smpl_tokenizer.onnx
+# The planner template graph (loaded by pc2_kplanner_onnx.py) is NOT part of
+# the shipped set -- bring your own (MODELS.md, PLANNER_MODEL row).
+${X2_MODELS}/x2_planner_template.onnx              ${PC2_PREFIX}/planner_stack/models/planner_onnx/x2_planner_template.onnx
+# Dance / gesture banks (.x2m2) live in ${PC2_PREFIX}/planner_stack/models/dances_x2m2/;
+# bake them with tools/build_demo_bank_from_upstream.sh (see manifest/REGENERATE.md)
+# and rsync the directory once, they are not listed per-file here.

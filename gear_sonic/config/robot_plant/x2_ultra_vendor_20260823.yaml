@@ -1,0 +1,79 @@
+# X2 Ultra actuator plant — VENDOR DATASHEET, 2026-08-23.
+#
+# SINGLE SOURCE OF TRUTH. Imported by x2_ultra.py (training), eval_x2_mujoco.py
+# (referee) and frozen_core_sonic_codec.py (ONNX action scales). Before this file
+# existed those three kept independent copies and drifted: the referee still
+# held pre-vendor values while training had moved on, which would have
+# mis-scaled every exported ONNX.
+#
+# Source: AgiBot hardware engineer, via the vendor liaison. Column H of the motor sheet is
+# LABELLED "Armature Reflected Inertia" but is motor-side ROTOR inertia —
+# confirmed in writing: "The inertia data is motor rotor only, not reflected
+# inertia from load onto motor." Joint-side armature = I_rotor * N^2:
+#
+#   PF52  8.3e-6  * 19.42856^2 = 3.132992e-3    24 N.m
+#   PF70  2.21e-5 * 20.0^2     = 8.840000e-3    36 nominal / 45 ACTUAL
+#   PF90  6.06e-5 * 21.90582^2 = 2.907981e-2    120 N.m
+#
+# KEYS ARE SUBSTRINGS of the MuJoCo joint name, FIRST MATCH WINS, so ORDER
+# MATTERS — specific before general. ankle and shoulder each span TWO motor
+# families; collapsing either back into one key reintroduces the 2.45x error
+# the datasheet exposed.
+name: vendor_20260823
+natural_freq_hz: 10.0
+damping_ratio: 2.0
+
+armature:
+  hip: 0.029079810             # PF90
+  knee: 0.029079810            # PF90
+  waist_yaw: 0.029079810       # PF90 — same motor as hip/knee (was 2.86x low)
+  waist_pitch: 0.003132992     # PF52
+  waist_roll: 0.003132992      # PF52
+  ankle_pitch: 0.008840000     # PF70 — NOT ankle_roll's motor (was 2.45x low)
+  ankle_roll: 0.003132992      # PF52
+  shoulder_pitch: 0.008840000  # PF70 (was 2.45x low)
+  shoulder_roll: 0.008840000   # PF70 (was 2.45x low)
+  shoulder_yaw: 0.003132992    # PF52
+  elbow: 0.003132992           # PF52
+  wrist_yaw: 0.003132992       # PF52
+  wrist_pitch: 0.00425         # ESTIMATE — vendor has not supplied wrist/head
+  wrist_roll: 0.00425          # ESTIMATE
+  head: 0.00425                # ESTIMATE
+
+# Torque ceilings (N.m). PF70 is kept at its NOMINAL 36 rather than the ACTUAL
+# 45: over-torquing sim is the dangerous direction — that is precisely what
+# waist=48 did ("stable in sim, falls forward on real"). Raise only if the
+# deploy/MC clamp is confirmed to pass full motor peak to the joint.
+effort:
+  hip: 120.0
+  knee: 120.0
+  waist_yaw: 120.0
+  waist_pitch: 24.0            # vendor PF52 (cfg had 36, MJCF had 48)
+  waist_roll: 24.0
+  ankle_pitch: 36.0
+  ankle_roll: 24.0
+  shoulder_pitch: 36.0
+  shoulder_roll: 36.0
+  shoulder_yaw: 24.0
+  elbow: 24.0
+  wrist_yaw: 24.0
+  wrist_pitch: 6.0
+  wrist_roll: 6.0
+  head_yaw: 2.6
+  head_pitch: 0.6
+
+# Default joint positions (rad), the pose actions are offsets FROM. Mirrors
+# x2_ultra.py's init_state.joint_pos. Lives here because a stub import cannot
+# reach that dict (isaaclab mocked -> init_state is a MagicMock), and because
+# eval_x2_mujoco.py kept its own copy -- a FOURTH duplicate of the robot
+# definition. Keys are substrings, first match wins; side-specific before
+# generic (left_shoulder_roll must beat shoulder_roll).
+default_joint_pos:
+  left_shoulder_roll: 0.2
+  right_shoulder_roll: -0.2
+  left_shoulder_pitch: 0.2
+  right_shoulder_pitch: 0.2
+  hip_pitch: -0.312
+  knee: 0.669
+  ankle_pitch: -0.363
+  elbow: -0.6

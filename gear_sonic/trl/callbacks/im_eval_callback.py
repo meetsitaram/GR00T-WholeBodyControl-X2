@@ -133,19 +133,21 @@ class ImEvalCallback(TrainerCallback):
             metrics_eval = self.evaluate_policy()
 
     def save_metrics_eval(self, metrics_eval):
+        def _coerce(v):
+            # numpy scalars (np.float32 etc.) and arrays both need a hop
+            # through Python primitives before json.dump will accept them.
+            if isinstance(v, np.ndarray):
+                return v.tolist()
+            if isinstance(v, np.generic):
+                return v.item()
+            return v
+
         metrics_json = {}
         for k, v in metrics_eval.items():
             if k in ["eval/all_metrics_dict", "eval/failed_metrics_dict"]:
-                metrics_json[k] = {}
-                for kk, vv in v.items():
-                    if isinstance(vv, np.ndarray):
-                        metrics_json[k][kk] = vv.tolist()
-                    else:
-                        metrics_json[k][kk] = vv
-            elif isinstance(v, np.ndarray):
-                metrics_json[k] = v.tolist()
+                metrics_json[k] = {kk: _coerce(vv) for kk, vv in v.items()}
             else:
-                metrics_json[k] = v
+                metrics_json[k] = _coerce(v)
 
         os.makedirs(self.output_dir, exist_ok=True)
         with open(os.path.join(self.output_dir, "metrics_eval.json"), "w") as f:
@@ -153,6 +155,36 @@ class ImEvalCallback(TrainerCallback):
             if self.log_keys is not None:
                 metrics_json["log_keys"] = self.log_keys
             json.dump(metrics_json, f, indent=4)
+
+        # Guarded per-clip trajectory dump for OFFLINE rich metrics (understep,
+        # foot-slip, MPJPE). OFF by default; enable with IM_EVAL_DUMP_TRAJ=<dir>.
+        # Not set during training -> zero effect on the running job.
+        dump_dir = os.environ.get("IM_EVAL_DUMP_TRAJ")
+        if dump_dir and getattr(self, "pred_pos_all", None):
+            import pickle
+
+            os.makedirs(dump_dir, exist_ok=True)
+            body_names = (
+                self.env.motion_command.cmd_body_names
+                if hasattr(self.env, "motion_command")
+                else None
+            )
+            keys = metrics_eval.get("eval/all_metrics_dict", {}).get("motion_keys")
+            out = os.path.join(dump_dir, f"traj_rank{self.args.global_rank}.pkl")
+            with open(out, "wb") as tf:
+                pickle.dump(
+                    {
+                        "motion_keys": keys,
+                        "body_names": list(body_names) if body_names is not None else None,
+                        "fps": getattr(self.env._motion_lib, "target_fps", 50),
+                        "pred_pos": self.pred_pos_all,  # list of (T, n_bodies, 3) global, robot
+                        "gt_pos": self.gt_pos_all,  # list of (T, n_bodies, 3) global, reference
+                        "mpjpe": self.mpjpe_all,
+                        "exec_qpos": self.exec_qpos_all,  # list of (T, 7+num_dof): root pos+quat(wxyz) world + joint_pos (IsaacLab order)
+                    },
+                    tf,
+                )
+            print(f"[im_eval] dumped {len(self.pred_pos_all)} trajectories -> {out}")
 
     @torch.no_grad()
     def evaluate_policy(self):
@@ -286,6 +318,7 @@ class ImEvalCallback(TrainerCallback):
         self.gt_pos, self.gt_pos_all = [], []
         self.gt_rot, self.gt_rot_all = [], []
         self.pred_pos, self.pred_pos_all = [], []
+        self.exec_qpos, self.exec_qpos_all = [], []  # executed root+dof (IM_EVAL_DUMP_TRAJ)
         self.pred_rot, self.pred_rot_all = [], []
         self.sampled_motion_idx = []
         self.time_eval_start = time.time()
@@ -352,6 +385,29 @@ class ImEvalCallback(TrainerCallback):
             self.gt_pos.append(gt_pos.cpu().numpy())
             self.pred_pos.append(pred_pos.cpu().numpy())
             self.mpjpe.append(mpjpe.cpu())
+        if os.environ.get("IM_EVAL_DUMP_TRAJ"):
+            # `self.env` is a ManagerEnvWrapper, which has no `.scene` -- the
+            # IsaacLab env it wraps does (the wrapper itself reaches it as
+            # `self.env.scene`). This branch is env-gated and off by default, so
+            # the AttributeError only surfaced the first time anyone asked for a
+            # trajectory dump. Walk the wrapper chain instead of assuming depth.
+            _e = self.env
+            for _ in range(4):
+                if hasattr(_e, "scene"):
+                    break
+                _e = getattr(_e, "env", None) or getattr(_e, "unwrapped", None)
+                if _e is None:
+                    break
+            if _e is None or not hasattr(_e, "scene"):
+                raise AttributeError(
+                    "IM_EVAL_DUMP_TRAJ: could not reach `.scene` from "
+                    f"{type(self.env).__name__} within 4 unwrap steps"
+                )
+            robot = _e.scene["robot"]
+            import torch as _t
+            self.exec_qpos.append(_t.cat(
+                [robot.data.root_state_w[:, :7], robot.data.joint_pos], dim=-1
+            ).cpu().numpy())
 
         # Collect object tracking errors if object exists in scene
         if self._has_object:
@@ -448,6 +504,7 @@ class ImEvalCallback(TrainerCallback):
                 )
 
             all_body_pos_pred = np.stack(self.pred_pos)
+            all_exec_qpos = np.stack(self.exec_qpos) if self.exec_qpos else None
             all_body_pos_gt = np.stack(self.gt_pos)
             # all_body_rot_pred = np.stack(self.pred_rot)
             # all_body_rot_gt = np.stack(self.gt_rot)
@@ -474,6 +531,13 @@ class ImEvalCallback(TrainerCallback):
             # all_body_rot_gt = [all_body_rot_gt[: (i - 1), idx] for idx, i in enumerate(self.env._motion_lib.get_motion_num_steps())]
 
             self.mpjpe_all.append(all_mpjpe)
+            if all_exec_qpos is not None:
+                self.exec_qpos_all += [
+                    all_exec_qpos[: (i - 1), idx]
+                    for idx, i in enumerate(
+                        self.env._motion_lib.get_motion_num_steps(self.env.motion_ids)
+                    )
+                ]
             self.pred_pos_all += all_body_pos_pred
             self.gt_pos_all += all_body_pos_gt
             # self.pred_rot_all += all_body_rot_pred
@@ -554,11 +618,16 @@ class ImEvalCallback(TrainerCallback):
                     "right_knee_link",
                     "right_ankle_roll_link",
                 ]
-                # NOTE use torso_link instead of head for vr_3points_subset_names
+                # NOTE use torso_link instead of head for vr_3points_subset_names.
+                # The tracked wrist link differs by config (wrist_yaw for base,
+                # wrist_roll for the palm-tracking arm-dynamics v3), so pick
+                # whichever is actually in body_names instead of hardcoding yaw.
+                _lw = "left_wrist_yaw_link" if "left_wrist_yaw_link" in body_names else "left_wrist_roll_link"
+                _rw = "right_wrist_yaw_link" if "right_wrist_yaw_link" in body_names else "right_wrist_roll_link"
                 vr_3points_subset_names = [
                     "torso_link",
-                    "left_wrist_yaw_link",
-                    "right_wrist_yaw_link",
+                    _lw,
+                    _rw,
                 ]
                 other_upper_bodies_subset_names = [
                     "pelvis",
@@ -594,20 +663,42 @@ class ImEvalCallback(TrainerCallback):
                     g[:, other_upper_bodies_indices, :] for g in self.gt_pos_all
                 ]
 
-                # Lazy import to avoid cffi version conflict with IsaacSim
-                from smpl_sim.smpllib.smpl_eval import compute_metrics_lite
+                # Lazy import to avoid cffi version conflict with IsaacSim.
+                # smpl_sim is optional: if it's not installed the MPJPE-style
+                # body-segment metrics are skipped, but `terminated` and
+                # `progress` per motion are still produced. This is what the
+                # isaaclab_mujoco_mirror diagnostic relies on (see G18 in
+                # docs/source/user_guide/sim2sim_mujoco.md).
+                try:
+                    from smpl_sim.smpllib.smpl_eval import compute_metrics_lite
 
-                metrics_all = compute_metrics_lite(
-                    self.pred_pos_all, self.gt_pos_all, concatenate=False
-                )  # list of length N_env
-                metrics_legs = compute_metrics_lite(pred_pos_legs, gt_pos_legs, concatenate=False)
-                metrics_vr_3points = compute_metrics_lite(
-                    pred_pos_vr_3points, gt_pos_vr_3points, concatenate=False
-                )
-                metrics_other_upper_bodies = compute_metrics_lite(
-                    pred_pos_other_upper_bodies, gt_pos_other_upper_bodies, concatenate=False
-                )
-                metrics_foot = compute_metrics_lite(pred_pos_foot, gt_pos_foot, concatenate=False)
+                    metrics_all = compute_metrics_lite(
+                        self.pred_pos_all, self.gt_pos_all, concatenate=False
+                    )  # list of length N_env
+                    metrics_legs = compute_metrics_lite(
+                        pred_pos_legs, gt_pos_legs, concatenate=False
+                    )
+                    metrics_vr_3points = compute_metrics_lite(
+                        pred_pos_vr_3points, gt_pos_vr_3points, concatenate=False
+                    )
+                    metrics_other_upper_bodies = compute_metrics_lite(
+                        pred_pos_other_upper_bodies,
+                        gt_pos_other_upper_bodies,
+                        concatenate=False,
+                    )
+                    metrics_foot = compute_metrics_lite(
+                        pred_pos_foot, gt_pos_foot, concatenate=False
+                    )
+                except ImportError:
+                    print(  # noqa: T201
+                        "[im_eval_callback] smpl_sim not installed - skipping MPJPE "
+                        "metrics. Per-motion progress/terminated still produced."
+                    )
+                    metrics_all = {}
+                    metrics_legs = {}
+                    metrics_vr_3points = {}
+                    metrics_other_upper_bodies = {}
+                    metrics_foot = {}
 
                 # Rename keys for subset metrics
                 metrics_legs = {f"{k}_legs": v for k, v in metrics_legs.items()}
@@ -855,6 +946,7 @@ class ImEvalCallback(TrainerCallback):
 
             self.pbar.update(1)
             self.pbar.refresh()
+            self.exec_qpos = []
             (
                 self.mpjpe,
                 self.gt_pos,

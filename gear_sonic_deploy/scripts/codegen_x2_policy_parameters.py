@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""Code-generate ``policy_parameters.hpp`` for the AgiBot X2 Ultra (31 DOF).
+
+This script is the single mechanical bridge between
+``gear_sonic/scripts/eval_x2_mujoco.py`` (the Python source of truth for X2
+constants — joint names, IL/MJ remaps, armature-based PD gains, action
+scales, default standing pose) and the C++ deployment header consumed by
+the X2 ONNX deploy harness.
+
+Why codegen instead of hand-rolled?
+    The G1 header was hand-written and drifted versus the Python during
+    motor changes (the ``7520_14 -> 7520_22`` comment scattered through
+    ``policy_parameters.hpp`` exists because of one such drift). For X2 we
+    invert the dependency: ``eval_x2_mujoco.py`` is canonical, and any
+    change to motor armature, effort limit, or default pose propagates to
+    the C++ side by re-running this script. The output header is fully
+    deterministic so a stale checkout shows up as a diff in CI.
+
+Run from anywhere (the import path is resolved relative to the repo root):
+
+    python gear_sonic_deploy/scripts/codegen_x2_policy_parameters.py
+
+Optional flags:
+    --output PATH    Override the header destination (default:
+                     gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/
+                     include/policy_parameters.hpp).
+    --check          Exit non-zero if the on-disk header differs from what
+                     this script would generate. Use in CI to detect
+                     forgotten regenerations.
+
+The script imports ``eval_x2_mujoco`` to pull constants directly. That
+module has heavy deps (torch / mujoco / joblib) — fine for a one-shot
+codegen, and the user already has those installed (it's the same env that
+trains policies).
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+EVAL_X2_PATH = REPO_ROOT / "gear_sonic" / "scripts" / "eval_x2_mujoco.py"
+DEFAULT_OUTPUT = (
+    REPO_ROOT
+    / "gear_sonic_deploy"
+    / "src"
+    / "x2"
+    / "agi_x2_deploy_onnx_ref"
+    / "include"
+    / "policy_parameters.hpp"
+)
+
+
+def _import_eval_x2():
+    """Import ``eval_x2_mujoco.py`` as a module without side effects.
+
+    The script is intentionally importable: top-level work is constant
+    definitions plus the ``_compute_gains_and_scales`` call. We need that
+    call to fire so we get ``KP``, ``KD``, ``ACTION_SCALE``, ``DEFAULT_DOF``
+    populated.
+    """
+    if not EVAL_X2_PATH.is_file():
+        raise FileNotFoundError(f"eval_x2_mujoco.py not found at {EVAL_X2_PATH}")
+    spec = importlib.util.spec_from_file_location("eval_x2_mujoco", EVAL_X2_PATH)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Failed to build import spec for {EVAL_X2_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["eval_x2_mujoco"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _fmt_float(x: float) -> str:
+    """Render a float with enough precision for round-trip and visual parity.
+
+    ``.10g`` keeps ``-0.312`` short while preserving full mantissa for
+    derived values like ``KP[0] = 99.118...``.
+    """
+    return f"{float(x):.10g}"
+
+
+def _emit_int_array(name: str, values, type_name: str = "int") -> str:
+    body = ", ".join(str(int(v)) for v in values)
+    return f"const std::array<{type_name}, {len(values)}> {name} = {{{body}}};"
+
+
+def _emit_named_array(
+    name: str,
+    cpp_type: str,
+    values,
+    joint_names,
+    formatter,
+) -> str:
+    """Emit one entry per joint with an inline ``// joint_name`` comment."""
+    assert len(values) == len(joint_names), (
+        f"length mismatch: {len(values)} values vs {len(joint_names)} joint names"
+    )
+    lines = [f"const std::array<{cpp_type}, {len(values)}> {name} = {{"]
+    for v, jname in zip(values, joint_names):
+        lines.append(f"    {formatter(v)}, // {jname}")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def _emit_string_array(name: str, values) -> str:
+    body = ",\n    ".join(f'"{v}"' for v in values)
+    return (
+        f"const std::array<const char*, {len(values)}> {name} = {{\n"
+        f"    {body},\n"
+        f"}};"
+    )
+
+
+def render_header(mod) -> str:
+    """Build the full header text from the imported eval_x2_mujoco module."""
+
+    joint_names = mod.MUJOCO_JOINT_NAMES
+    n = mod.NUM_DOFS
+    assert len(joint_names) == n, (
+        f"NUM_DOFS={n} but MUJOCO_JOINT_NAMES has {len(joint_names)} entries"
+    )
+    assert len(mod.IL_TO_MJ_DOF) == n
+    assert len(mod.MJ_TO_IL_DOF) == n
+    assert mod.KP.shape == (n,)
+    assert mod.KD.shape == (n,)
+    assert mod.ACTION_SCALE.shape == (n,)
+    assert mod.DEFAULT_DOF.shape == (n,)
+
+    parts: list[str] = []
+
+    parts.append(
+        """/**
+ * @file policy_parameters.hpp
+ * @brief Motor constants, PID gains, joint mappings, action scales, and default
+ *        standing angles for the AgiBot X2 Ultra 31-DOF policy.
+ *
+ * AUTOGENERATED — DO NOT EDIT BY HAND.
+ *
+ * Regenerate via:
+ *   python gear_sonic_deploy/scripts/codegen_x2_policy_parameters.py
+ *
+ * Source of truth: gear_sonic/scripts/eval_x2_mujoco.py
+ *   - MUJOCO_JOINT_NAMES, IL_TO_MJ_DOF, MJ_TO_IL_DOF
+ *   - ARMATURES (per joint family) + NATURAL_FREQ + DAMPING_RATIO
+ *   - EFFORT_LIMITS (per joint family)
+ *   - DEFAULT_JOINT_POS (training reset pose, MuJoCo joint order)
+ *
+ * ## Joint Ordering
+ *
+ * Two ordering conventions coexist:
+ *   - **MuJoCo order** — used by the simulator, motion-lib PKLs, and the
+ *     X2 robot's URDF kinematic tree.
+ *   - **IsaacLab order** — used internally by the trained policy and the
+ *     proprioception buffer. The IL ordering interleaves left/right
+ *     joints (hip_pitch L/R/.../waist_yaw/...).
+ *
+ * ``isaaclab_to_mujoco`` and ``mujoco_to_isaaclab`` provide the remapping.
+ *
+ * ## PID Gain Computation
+ *
+ * Per-joint stiffness and damping derive from a per-armature
+ * critically-damped second-order model:
+ *   stiffness = armature * (2 * pi * 10 Hz)^2
+ *   damping   = 2 * zeta * armature * (2 * pi * 10 Hz)        (zeta = 2.0)
+ *
+ * The X2 (unlike the G1) uses joint-keyword-based armature lookup rather
+ * than a small fixed motor-type taxonomy, so the per-joint gains are
+ * baked in directly below.
+ *
+ * ## Action Scaling
+ *
+ * Policy actions are scaled per joint:
+ *   action_scale = 0.25 * effort_limit / stiffness
+ *
+ * Final command: target = action * action_scale + default_angle.
+ */
+"""
+    )
+
+    parts.append("#ifndef POLICY_PARAMETERS_HPP")
+    parts.append("#define POLICY_PARAMETERS_HPP\n")
+    parts.append("#include <array>")
+    parts.append("#include <cstddef>\n")
+
+    parts.append("// ---------- Robot dimensions ----------")
+    parts.append(f"constexpr std::size_t NUM_DOFS = {n};")
+    parts.append(f"constexpr std::size_t HISTORY_LEN = {int(mod.HISTORY_LEN)};")
+    parts.append(f"constexpr std::size_t NUM_FUTURE_FRAMES = {int(mod.NUM_FUTURE_FRAMES)};")
+    parts.append(f"constexpr double CONTROL_DT = {_fmt_float(mod.CONTROL_DT)};")
+    parts.append(f"constexpr double SIM_DT = {_fmt_float(mod.SIM_DT)};")
+    parts.append(f"constexpr int DECIMATION = {int(mod.DECIMATION)};")
+    parts.append(f"constexpr double DT_FUTURE_REF = {_fmt_float(mod.DT_FUTURE_REF)};\n")
+
+    # TODO(rename): "mujoco_joint_names" is a misnomer that confuses operators
+    # at the gantry (the runtime log line "validated against mujoco_joint_names"
+    # makes it sound like we're comparing against MuJoCo at deploy time -- we
+    # are not). This is the canonical 31-joint name + order baked into the
+    # MJCF, used identically by IsaacLab training, MuJoCo sim2sim eval, AND
+    # the real-robot deploy. A better name is `policy_joint_names` or
+    # `canonical_joint_names`. Renaming is a multi-file lockstep change:
+    #   1. eval_x2_mujoco.py:65        MUJOCO_JOINT_NAMES = ...
+    #   2. x2_preflight.py:94          MUJOCO_JOINT_NAMES = ...
+    #   3. this codegen string         "mujoco_joint_names" (line below)
+    #   4. aimdk_io.cpp / .hpp uses    mujoco_joint_names[...]
+    #   5. deploy_logger.cpp           CSV column name prefixes
+    # Defer until after first powered run so we don't churn deploy code mid-
+    # bring-up; track in a follow-up "rename mujoco_joint_names" PR.
+    parts.append("// ---------- Joint name table (MJCF order; canonical) ----------")
+    parts.append(_emit_string_array("mujoco_joint_names", joint_names))
+    parts.append("")
+
+    parts.append("// ---------- Joint ordering remaps ----------")
+    parts.append(
+        "// IL_TO_MJ_DOF[il_idx] = mj_idx  -> use to send IL-ordered tensors to MJ/SDK"
+    )
+    parts.append(_emit_int_array("isaaclab_to_mujoco", mod.IL_TO_MJ_DOF))
+    parts.append(
+        "// MJ_TO_IL_DOF[mj_idx] = il_idx  -> use to map robot/MJ readings into IL order"
+    )
+    parts.append(_emit_int_array("mujoco_to_isaaclab", mod.MJ_TO_IL_DOF))
+    parts.append("")
+
+    parts.append("// ---------- PD gains (MuJoCo joint order) ----------")
+    parts.append(
+        "// kp[i] = ARMATURES[joint_family(i)] * (2*pi*10 Hz)^2  (Python: KP)"
+    )
+    parts.append(_emit_named_array("kps", "double", mod.KP, joint_names, _fmt_float))
+    parts.append("")
+    parts.append(
+        "// kd[i] = 2 * 2.0 * ARMATURES[joint_family(i)] * (2*pi*10 Hz)  (Python: KD)"
+    )
+    parts.append(_emit_named_array("kds", "double", mod.KD, joint_names, _fmt_float))
+    parts.append("")
+
+    parts.append("// ---------- Action scaling (MuJoCo joint order) ----------")
+    parts.append(
+        "// action_scale[i] = 0.25 * EFFORT_LIMITS[joint_family(i)] / kp[i]  (Python: ACTION_SCALE)"
+    )
+    parts.append(
+        _emit_named_array(
+            "x2_action_scale", "double", mod.ACTION_SCALE, joint_names, _fmt_float
+        )
+    )
+    parts.append("")
+
+    parts.append("// ---------- Default standing pose (MuJoCo joint order, radians) ----------")
+    parts.append(
+        "// Matches gear_sonic/envs/.../x2_ultra.py InitialStateCfg (training reset pose)."
+    )
+    parts.append(
+        _emit_named_array(
+            "default_angles", "double", mod.DEFAULT_DOF, joint_names, _fmt_float
+        )
+    )
+    parts.append("")
+
+    parts.append("#endif // POLICY_PARAMETERS_HPP")
+    parts.append("")
+
+    return "\n".join(parts)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    ap.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help=f"destination header path (default: {DEFAULT_OUTPUT.relative_to(REPO_ROOT)})",
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="exit non-zero if on-disk header differs from what would be generated",
+    )
+    args = ap.parse_args()
+
+    mod = _import_eval_x2()
+    rendered = render_header(mod)
+
+    if args.check:
+        existing = args.output.read_text() if args.output.exists() else ""
+        if existing == rendered:
+            print(f"OK  {args.output} is up to date.")
+            return 0
+        print(
+            f"FAIL  {args.output} is out of date — rerun without --check to regenerate.",
+            file=sys.stderr,
+        )
+        return 1
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(rendered)
+    print(f"Wrote {args.output} ({len(rendered)} bytes, {len(mod.MUJOCO_JOINT_NAMES)} DOF).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

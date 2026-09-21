@@ -181,6 +181,54 @@ else
     uv pip install -e external_dependencies/unitree_sdk2_python
 fi
 
+# ── 8. XRoboToolkit PC Service (system package; the daemon xrt talks to) ─────
+# The pybind SDK (step 5) is only a gRPC client: at runtime it dials the
+# RoboticsServiceProcess daemon on 127.0.0.1:60061, and the PICO headset's
+# XRoboToolkit app connects to the SAME daemon over the LAN. Without this
+# package installed and running, xrt.init() connects to nothing and every
+# reader sits at "no data" forever. The teleop stack auto-starts the daemon
+# in pico mode (run_x2_quest3_planner_stack.sh); here we only make sure the
+# package exists. Skip with SKIP_PC_SERVICE=1 (e.g. CI containers).
+if [ "${SKIP_PC_SERVICE:-0}" != "1" ]; then
+    if dpkg -s roboticsservice >/dev/null 2>&1; then
+        echo "[OK] XRoboToolkit PC Service (roboticsservice) already installed"
+    elif [ "$ARCH" = "x86_64" ]; then
+        UBU="$(. /etc/os-release && echo "$VERSION_ID")"
+        case "$UBU" in
+            22.04|24.04) ;;
+            *) echo "[WARN] Ubuntu $UBU has no prebuilt PC Service deb (22.04/24.04 only);"
+               echo "       install manually from github.com/XR-Robotics/XRoboToolkit-PC-Service"
+               UBU="" ;;
+        esac
+        if [ -n "$UBU" ]; then
+            PCS_DEB="XRoboToolkit_PC_Service_1.0.0_ubuntu_${UBU}_amd64.deb"
+            PCS_URL="https://github.com/XR-Robotics/XRoboToolkit-PC-Service/releases/download/v1.0.0/${PCS_DEB}"
+            echo "[INFO] Downloading XRoboToolkit PC Service ($PCS_DEB) …"
+            TMP_DEB="$(mktemp -d)/${PCS_DEB}"
+            curl -fL -o "$TMP_DEB" "$PCS_URL"
+            if sudo -n true 2>/dev/null; then
+                sudo dpkg -i "$TMP_DEB"
+                echo "[OK] XRoboToolkit PC Service installed"
+            else
+                echo "[WARN] sudo needs a password; finish the install manually:"
+                echo "       sudo dpkg -i $TMP_DEB"
+            fi
+        fi
+    else
+        # aarch64 (Jetson/Orin): the arm64 service deb ships in-repo.
+        ARM_DEB="$REPO_ROOT/decoupled_wbc/control/teleop/device/pico/roboticsservice_1.0.0.0_arm64.deb"
+        if [ -f "$ARM_DEB" ]; then
+            if sudo -n true 2>/dev/null; then
+                sudo dpkg -i "$ARM_DEB" && echo "[OK] PC Service (arm64) installed"
+            else
+                echo "[WARN] sudo needs a password; run: sudo dpkg -i $ARM_DEB"
+            fi
+        else
+            echo "[WARN] arm64 PC Service deb not found at $ARM_DEB"
+        fi
+    fi
+fi
+
 echo ""
 echo "══════════════════════════════════════════════════════════════"
 echo "  Setup complete!  Activate the venv with:"

@@ -18,6 +18,9 @@
 *.hdf5 filter=lfs diff=lfs merge=lfs -text
 *.parquet filter=lfs diff=lfs merge=lfs -text
 *.obj filter=lfs diff=lfs merge=lfs -text
+# Recorder output (deploy_x2.sh --record) and test fixtures
+*.npz filter=lfs diff=lfs merge=lfs -text
+# Audio prompts (Quest 3 calibration cues)
 *.dae filter=lfs diff=lfs merge=lfs -text
 *.so filter=lfs diff=lfs merge=lfs -text
 *.so.* filter=lfs diff=lfs merge=lfs -text

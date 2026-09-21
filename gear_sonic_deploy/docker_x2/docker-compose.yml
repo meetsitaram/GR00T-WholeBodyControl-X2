@@ -1,0 +1,79 @@
+# X2 Ultra MuJoCo-sim container for GR00T-WholeBodyControl.
+#
+# Pairs with deploy_x2.sh `sim` mode -- the container provides ROS 2 Humble +
+# aimdk_msgs + the MuJoCo bridge's Python deps so we can launch the bridge
+# (and, later, the C++ deploy node) on a host that doesn't itself have ROS.
+#
+# Build context is the repo root (../..) so the Dockerfile can COPY the
+# aimdk_msgs sources from gear_sonic_deploy/thirdparty/aimdk_msgs/. The whole monorepo
+# is also bind-mounted at /workspace/sonic for live editing -- changes to
+# scripts/x2_mujoco_ros_bridge.py or eval_x2_mujoco.py are picked up without
+# a rebuild.
+
+services:
+  x2sim:
+    build:
+      context: ../..
+      dockerfile: gear_sonic_deploy/docker_x2/Dockerfile
+    image: gr00t-x2sim:latest
+    network_mode: host
+    # NVIDIA GPU passthrough -- needed only when --sim-viewer is used so the
+    # mujoco passive viewer renders through the host's GPU. Headless `sim`
+    # runs work without it. If the host has no NVIDIA driver/toolkit (or the
+    # `nvidia` runtime isn't registered with dockerd), comment this out and
+    # GLFW will fall back to mesa software rendering (slower but works).
+    runtime: nvidia
+    environment:
+      # Sim DDS isolation -- matches deploy_x2.sh `sim` defaults.
+      # Loopback only + a private domain id so a sim run on a machine that
+      # also has the SDK ethernet up cannot fight a real X2.
+      - ROS_LOCALHOST_ONLY=1
+      - ROS_DOMAIN_ID=73
+      - PYTHONUNBUFFERED=1
+      # X11 forwarding for the mujoco passive viewer (--sim-viewer). DISPLAY
+      # is read off the host so this works whether you're on :0 or :1.
+      # XAUTHORITY is mapped to a path inside the container that we mount
+      # below; the host's actual file may have a long $XDG_RUNTIME_DIR path.
+      # QT_X11_NO_MITSHM=1 sidesteps a long-standing MIT-SHM/Qt crash
+      # whenever the X server is on a different uid namespace than the
+      # client (which is exactly the container/host case).
+      - DISPLAY=${DISPLAY:-:0}
+      - XAUTHORITY=/root/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      # Ask the NVIDIA container runtime to inject the driver libs (libGL,
+      # libEGL, libGLX, libnvidia-glcore, ...) into the container at start.
+      # `all` covers `compute` (CUDA), `utility` (nvidia-smi), and `graphics`
+      # / `display` (which is what mujoco.viewer actually needs).
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - ../..:/workspace/sonic:rw
+      # X11 socket + auth cookie so the in-container mujoco viewer can render
+      # on the host's display. Read-only on the host side. ${XAUTHORITY:-...}
+      # falls back to ~/.Xauthority for classic Xorg sessions; on Wayland
+      # systems with XWayland the cookie may live under $XDG_RUNTIME_DIR --
+      # set XAUTHORITY in your shell before `docker compose run` if so.
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-${HOME}/.Xauthority}:/root/.Xauthority:ro
+      # Your exported X2 ONNX checkpoints (see MODELS.md). Default: the
+      # repo-relative gear_sonic_deploy/models/ (gitignored). Mounted read-only
+      # so `deploy_x2.sh sim --model /workspace/checkpoints/<file>.onnx` resolves.
+      # Override with `X2_CHECKPOINTS_DIR=/some/other/path docker compose ...`
+      # if you keep checkpoints elsewhere.
+      - ${X2_CHECKPOINTS_DIR:-../models}:/workspace/checkpoints:ro
+      # Persist pip cache + colcon build dir across runs so iterating on
+      # the bridge or rebuilding the deploy doesn't redo work each time.
+      - x2sim-pip-cache:/root/.cache/pip
+      - x2sim-colcon-build:/workspace/sonic/gear_sonic_deploy/build
+      - x2sim-colcon-install:/workspace/sonic/gear_sonic_deploy/install
+      - x2sim-colcon-log:/workspace/sonic/gear_sonic_deploy/log
+    working_dir: /workspace/sonic
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+volumes:
+  x2sim-pip-cache:
+  x2sim-colcon-build:
+  x2sim-colcon-install:
+  x2sim-colcon-log:

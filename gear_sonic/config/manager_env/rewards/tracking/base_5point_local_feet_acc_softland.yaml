@@ -1,0 +1,21 @@
+# Standard reward composition + SOFT-LANDING terms (2026-07-16):
+# touchdown impact-velocity penalty + GRF-overshoot penalty on the feet.
+# Identical to base_5point_local_feet_acc otherwise.
+
+defaults:
+  - terms/tracking_anchor_pos@_here_
+  - terms/tracking_anchor_ori@_here_
+  - terms/tracking_relative_body_pos@_here_
+  - terms/tracking_relative_body_ori@_here_
+  - terms/tracking_body_linvel@_here_
+  - terms/tracking_body_angvel@_here_
+  - terms/action_rate_l2@_here_
+  - terms/joint_limit@_here_
+  - terms/undesired_contacts@_here_
+  - terms/anti_shake_ang_vel@_here_
+  - terms/tracking_vr_5point_local@_here_
+  - terms/feet_acc@_here_
+  - terms/feet_impact_vel@_here_
+  - terms/feet_grf_overshoot@_here_
+
+_target_: gear_sonic.envs.manager_env.mdp.rewards.RewardsCfg

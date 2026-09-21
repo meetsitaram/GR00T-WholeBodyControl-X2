@@ -16,7 +16,7 @@ import joblib
 import pxr
 
 from gear_sonic.envs.manager_env.mdp import terrain
-from gear_sonic.envs.manager_env.robots import g1, h2
+from gear_sonic.envs.manager_env.robots import g1, h2, x2_ultra
 from gear_sonic.trl.utils import common
 
 
@@ -281,9 +281,20 @@ class MySceneCfg(InteractiveSceneCfg):
 
         self.eval_camera = None
         if config.get("render_results", False):
-            self.eval_camera = TiledCameraCfg(
+            # eval_camera_type "standard" swaps the tiled path for a
+            # per-camera RTX render product (CameraCfg) — an escape hatch for
+            # single-env eval when the tiled path misbehaves. Default is
+            # unchanged ("tiled"). NOTE: NuRec splats DO render through the
+            # tiled path; if a splat world looks empty, check world_pos
+            # (env origin offset) before suspecting the camera.
+            _cam_cls = (
+                CameraCfg
+                if config.get("eval_camera_type", "tiled") == "standard"
+                else TiledCameraCfg
+            )
+            self.eval_camera = _cam_cls(
                 prim_path="/World/envs/env_.*/eval_camera",
-                offset=TiledCameraCfg.OffsetCfg(
+                offset=_cam_cls.OffsetCfg(
                     pos=(0, 0, 0), rot=(1, 0, 0, 0), convention="world"
                 ),
                 data_types=["rgb"],
@@ -353,6 +364,43 @@ class MySceneCfg(InteractiveSceneCfg):
             )
         else:
             raise ValueError(f"Unknown terrain type: {terrain_type}")
+
+        # Optional static world layers (x2-kitchen-sim: NuRec splat visual +
+        # wall collision mesh). Config-gated; absent keys leave training
+        # scenes untouched. Global prims — intended for num_envs=1 eval runs.
+        world_usd = config.get("world_usd", None)
+        world_pos = tuple(config.get("world_pos", (0.0, 0.0, 0.0)))
+        if world_usd:
+            self.world_visual = AssetBaseCfg(
+                prim_path="/World/WorldVisual",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=world_pos),
+                spawn=sim_utils.UsdFileCfg(usd_path=world_usd),
+            )
+        world_collision_usd = config.get("world_collision_usd", None)
+        if world_collision_usd:
+            self.world_collision = AssetBaseCfg(
+                prim_path="/World/WorldCollision",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=world_pos),
+                spawn=sim_utils.UsdFileCfg(usd_path=world_collision_usd),
+            )
+
+        # Optional static prop (x2-groot-vla pass-B: bake an object at the
+        # extracted reach point as a static scene entry — no rigid-object /
+        # motion-object-channel machinery). Config-gated; absent keys leave
+        # training scenes untouched. Global prim — num_envs=1 eval only.
+        prop_usd = config.get("prop_usd", None)
+        if prop_usd:
+            # prop_pos is in the WORLD-ASSET frame (kitchen frame): compose
+            # with world_pos like the world layers, since /World/Prop is a
+            # global prim while env content lives at the env origin.
+            _pp = tuple(config.get("prop_pos", (0.0, 0.0, 0.0)))
+            _prop_world = tuple(a + b for a, b in zip(_pp, world_pos))
+            print(f"[x2-groot-vla] prop {prop_usd} at world {_prop_world}", flush=True)
+            self.prop = AssetBaseCfg(
+                prim_path="/World/Prop",
+                init_state=AssetBaseCfg.InitialStateCfg(pos=_prop_world),
+                spawn=sim_utils.UsdFileCfg(usd_path=prop_usd),
+            )
 
         # robots
         self.robot: ArticulationCfg = dataclasses.MISSING
@@ -969,7 +1017,16 @@ class ModularTrackingEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = config.get("sim_dt", 0.005)
         self.sim.render_interval = self.decimation
         self.sim.physics_material = self.scene.terrain.physics_material
-        self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
+        # PhysX GPU narrowphase contact patch buffer. The default 10*2**15
+        # (~327K) overflows on contact-rich URDFs (e.g. x2_ultra_sphere_feet
+        # with 24 spheres/foot) above ~12K envs/GPU — see "Patch buffer
+        # overflow" errors in a large sphere-feet training run, which
+        # peaked at ~511K requested. Bumped to 2**20 (~1M) to give 2x
+        # headroom at 24K envs/GPU on B200; cheap GPU memory (~64 MB).
+        # Override via config if you push past 32K envs/GPU.
+        self.sim.physx.gpu_max_rigid_patch_count = config.get(
+            "gpu_max_rigid_patch_count", 2**20
+        )
 
         # Increase collision stack size for scenes with complex collision meshes (e.g. staircases)
         gpu_collision_stack_size_exp = config.get("gpu_collision_stack_size_exp", 26)
@@ -1006,9 +1063,88 @@ class ModularTrackingEnvCfg(ManagerBasedRLEnvCfg):
                 "action_scale": h2.H2_ACTION_SCALE,
                 "isaaclab_to_mujoco_mapping": h2.H2_ISAACLAB_TO_MUJOCO_MAPPING,
             },
+            "x2_ultra": {
+                "robot_cfg": x2_ultra.X2_ULTRA_CFG,
+                "action_scale": x2_ultra.X2_ULTRA_ACTION_SCALE,
+                "isaaclab_to_mujoco_mapping": x2_ultra.X2_ULTRA_ISAACLAB_TO_MUJOCO_MAPPING,
+            },
         }
 
         robot_type = config["robot"].get("type", "g1")
+
+        # X2 Ultra opt-in MuJoCo-mirroring overrides (used by the
+        # isaaclab_mujoco_mirror diagnostic; see docs G18). Defaults below
+        # produce X2_ULTRA_CFG bit-for-bit, so existing training is unaffected.
+        if robot_type == "x2_ultra":
+            actuator_regime = config["robot"].get("actuator_regime", "implicit")
+            frictionloss = float(config["robot"].get("frictionloss", 0.0))
+            foot = config["robot"].get("foot", "mesh")
+            ankle_kp_scale = float(config["robot"].get("ankle_kp_scale", 1.0))
+            # Waist pitch/roll torque ceiling. SINGLE SOURCE OF TRUTH is the
+            # plant yaml (config/robot_plant/x2_ultra.yaml, vendor PF52 = 24
+            # N.m, hardware-enforced). There is deliberately NO literal
+            # fallback here: the old `.get(..., 36.0)` silently trained the
+            # incumbent for its entire life -- and the 2026-09-02 vendor
+            # adaptation run -- at the motor-peak 36 (caught from wandb:
+            # tau_p99_waist_pr 32.97 / demand_p99 0.9158 = 36.0).
+            #   - key ABSENT  -> None -> factory reads the plant (fails loudly
+            #                    via Plant.effort_for KeyError if missing)
+            #   - key PRESENT -> explicit, intentional override (e.g. 36.0 to
+            #                    reproduce a legacy run bit-identically)
+            waist_pr_effort = config["robot"].get("waist_pr_effort", None)
+            if waist_pr_effort is not None:
+                waist_pr_effort = float(waist_pr_effort)
+            waist_pr_effective = (
+                waist_pr_effort if waist_pr_effort is not None
+                else x2_ultra.plant_waist_pr_effort()
+            )
+            waist_pr_source = (
+                "EXPLICIT robot.waist_pr_effort override"
+                if waist_pr_effort is not None else "plant yaml (single source)"
+            )
+            # ALWAYS printed, on every path: what is logged is what is
+            # enforced. This line is the proof a run trained at the intended
+            # ceiling -- if it is missing from a log, the env is dishonest.
+            print(  # noqa: T201
+                f"[x2_ultra] waist_pr effort ceiling IN EFFECT: "
+                f"{waist_pr_effective} N.m  <- {waist_pr_source}"
+            )
+            # PLANT IDENTITY, always printed (2026-09-02, operator: "did we
+            # also pick up the correct vendor armature?"). Armature was
+            # already yaml-sourced, but nothing PROVED it at runtime the way
+            # the effort banner does. Name + the three motor-family
+            # armatures (joint-side, I_rotor*N^2) that every gain/action
+            # scale derives from. Legacy H2-estimate values would read
+            # hip 0.0251 / waist_yaw 0.0102 / ankle_pitch 0.00361.
+            print(  # noqa: T201
+                f"[x2_ultra] PLANT IN EFFECT: {x2_ultra._PLANT.name}  armature "
+                f"PF90(hip/knee/waist_yaw)={x2_ultra.ARMATURE_PF90:.6g} "
+                f"PF52(waist_pr/ankle_roll)={x2_ultra.ARMATURE_PF52:.6g} "
+                f"PF70(ankle_pitch/shoulder_pr)={x2_ultra.ARMATURE_PF70:.6g}"
+                f"  <- {x2_ultra._PLANT.source if hasattr(x2_ultra._PLANT, 'source') else 'plant yaml'}"
+            )
+            non_default = (
+                actuator_regime != "implicit"
+                or frictionloss != 0.0
+                or foot != "mesh"
+                or ankle_kp_scale != 1.0
+                or waist_pr_effort is not None
+            )
+            if non_default:
+                print(  # noqa: T201
+                    "[x2_ultra] Building MuJoCo-mirror cfg: "
+                    f"actuator_regime={actuator_regime} frictionloss={frictionloss} "
+                    f"foot={foot} ankle_kp_scale={ankle_kp_scale} "
+                    f"waist_pr_effort={waist_pr_effective}"
+                )
+                robot_mapping["x2_ultra"]["robot_cfg"] = x2_ultra.make_x2_ultra_cfg(
+                    actuator_regime=actuator_regime,
+                    frictionloss=frictionloss,
+                    foot=foot,
+                    ankle_kp_scale=ankle_kp_scale,
+                    waist_pr_effort=waist_pr_effort,
+                )
+
         self.scene.robot = robot_mapping[robot_type]["robot_cfg"].replace(
             prim_path="{ENV_REGEX_NS}/Robot"
         )

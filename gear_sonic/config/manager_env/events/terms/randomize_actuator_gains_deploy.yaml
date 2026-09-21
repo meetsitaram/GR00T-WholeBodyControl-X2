@@ -1,0 +1,81 @@
+# =============================================================================
+# Actuator-Gain Randomization (KP / KD) -- DEPLOY-BRACKETING RANGE
+# =============================================================================
+#
+# Same IsaacLab built-in as terms/randomize_actuator_gains.yaml, but with a
+# range chosen to BRACKET THE PD SCALES WE ACTUALLY SHIP rather than to model
+# calibration drift.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The sibling term samples [0.85, 1.15], citing Lee et al. 2020 / Margolis et
+# al. 2022. Those papers randomize around a plant they then deploy onto
+# UNCHANGED. We do the opposite: every X2 demo runs bigrun.yaml, which retunes
+# the trained PD by these factors --
+#
+#     kd_hip           0.476     1.8x BELOW the [0.85,1.15] floor
+#     kd_knee          0.792          below the floor
+#     kp_ankle_pitch   1.40           above the ceiling
+#     kd_ankle_pitch   2.00      1.7x above the ceiling
+#     kp_waist_pr      2.00      1.7x above the ceiling
+#     kd_waist_pr      5.51      4.8x above the ceiling
+#
+# NOT ONE of the six falls inside the randomized band. The band spans 1.35x;
+# the deploy demands 11.6x. So the existing term, even when enabled, trains for
+# a plant we never run on.
+#
+# The asymmetry below (damping 15x span, stiffness 3x) mirrors that table --
+# damping is where the deploy diverges hardest.
+#
+# CONTEXT: the v12 bring-up failure. Both v0 and v12 trained with NO gain
+# randomization at all -- neither composed level0_4_pd. The gap is latent for a
+# loosely-tracking policy like v0 and load-bearing for an aggressive one like
+# v12, which reached waist_pitch +0.205 against a +0.185 reference and
+# destabilized where v0 sat at -0.002 and was fine.
+#
+# KNOWN RISK, READ BEFORE USING
+# -----------------------------
+# A 15x damping span is wide. It may slow convergence, or push the policy
+# toward an over-conservative controller that is stable on every plant and
+# excellent on none. If that shows up in training curves, the fallback is to
+# sample from the DISCRETE SET of shipped presets plus jitter rather than a
+# broad uniform -- covering the plants we actually deploy instead of a
+# continuum mostly made of plants that do not exist. That variant needs a
+# custom func; this file deliberately stays on the built-in.
+#
+# MODE IS "startup", NOT "reset" -- DELIBERATE, DO NOT "FIX" IT
+# ------------------------------------------------------------
+# G1's actuators are all ImplicitActuatorCfg and X2 is a mix (3 IdealPD +
+# 2 Implicit). IsaacLab's docstring for this function warns:
+#
+#     "For implicit actuators, this function uses CPU tensors to assign the
+#      actuator gains into the simulation. In such cases, it is recommended to
+#      use this function only during the initialization of the environment."
+#
+# mode "reset" would therefore round-trip through CPU on every episode reset,
+# across 12,288 envs. The sibling terms/randomize_actuator_gains.yaml uses
+# "reset" and carries that cost.
+#
+# "startup" loses nothing that matters here: with 12,288 envs each drawing its
+# own gains once, the policy still sees 12,288 distinct plants per run --
+# denser coverage of the range than per-episode resampling gives, at no
+# recurring cost. What it gives up is a single env visiting many plants over
+# its lifetime, which matters only if you want the policy to adapt WITHIN an
+# episode. We do not: the real robot's gains are fixed for a whole session.
+# =============================================================================
+
+randomize_actuator_gains:
+  _target_: isaaclab.managers.EventTermCfg
+  func: isaaclab.envs.mdp.events:randomize_actuator_gains
+  mode: "startup"
+  params:
+    asset_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "robot"
+      joint_names: [".*"]
+    # covers 1.00 (training parity) .. 2.00 (bigrun waist), with headroom
+    stiffness_distribution_params: [0.8, 2.5]
+    # covers 0.476 (bigrun hip) .. 5.51 (bigrun waist), with headroom
+    damping_distribution_params: [0.4, 6.0]
+    operation: "scale"
+    distribution: "uniform"

@@ -918,6 +918,77 @@ class ManagerEnvWrapper:
                 extras["to_log"][k] = v
             else:
                 extras["to_log"][k] = torch.tensor(v, dtype=torch.float)
+        # ---- Actuator diagnostics (added 2026-08-23, vendor-datasheet retrain).
+        # Purpose: validate on the ROBOT whether the corrected armature/effort
+        # numbers are real. These probe the two things the correction changes:
+        #   * whether a joint's torque CEILING actually binds (the open
+        #     rated-vs-peak question on waist_pitch/roll -- vendor says 24 N.m,
+        #     v0 trained at 48 and works, v12 trained at 24 and failed), and
+        #   * whether the retuned PD (waist_yaw kp x2.86, ankle_pitch and
+        #     shoulder_pitch/roll kp x2.45) tracks better or just saturates.
+        #
+        # Cheap: a handful of reductions over tensors already resident. Logged
+        # via the existing extras["to_log"] -> Episode/<key> channel, so they
+        # appear in wandb/tensorboard with no trainer change.
+        try:
+            _r = self.env.scene["robot"]
+            if getattr(self, "_actdiag_idx", None) is None:
+                _jn = _r.joint_names
+                _groups = {
+                    "hip": [i for i, n in enumerate(_jn) if "hip" in n],
+                    "knee": [i for i, n in enumerate(_jn) if "knee" in n],
+                    "ankle_pitch": [i for i, n in enumerate(_jn) if "ankle_pitch" in n],
+                    "ankle_roll": [i for i, n in enumerate(_jn) if "ankle_roll" in n],
+                    "waist_yaw": [i for i, n in enumerate(_jn) if "waist_yaw" in n],
+                    "waist_pr": [i for i, n in enumerate(_jn)
+                                 if "waist_pitch" in n or "waist_roll" in n],
+                    "shoulder_pr": [i for i, n in enumerate(_jn)
+                                    if "shoulder_pitch" in n or "shoulder_roll" in n],
+                }
+                self._actdiag_idx = {k: v for k, v in _groups.items() if v}
+            # IsaacLab's ImplicitActuator computes
+            #   computed_effort = kp*pos_err + kd*vel_err + ff
+            #   applied_effort  = clip(computed_effort, +/- effort_limit)
+            # and exposes BOTH, so saturation is detectable EXACTLY (the clip
+            # either bit or it did not) rather than via a threshold heuristic.
+            # This is the direct probe of the open question: does the 24 N.m
+            # waist ceiling actually bind during training?
+            _tau = _r.data.applied_torque
+            _tau_c = _r.data.computed_torque
+            # effort ceiling per joint; fall back to a large number if absent so
+            # a missing limit shows as ~0 saturation rather than a crash
+            _lim = getattr(_r.data, "joint_effort_limits", None)
+            if _lim is None:
+                _lim = getattr(_r.data, "joint_effort_limit", None)
+            for _g, _ix in self._actdiag_idx.items():
+                _t = _tau[:, _ix].abs()
+                extras["to_log"][f"act/tau_mean_{_g}"] = _t.mean()
+                extras["to_log"][f"act/tau_p99_{_g}"] = torch.quantile(
+                    _t.flatten().float(), 0.99
+                )
+                # EXACT saturation: the clip changed the value.
+                _c = _tau_c[:, _ix]
+                _sat = (_c.abs() - _t) > 1e-4
+                extras["to_log"][f"act/sat_{_g}"] = _sat.float().mean()
+                # how far past the ceiling it WANTED to go (1.0 = exactly at
+                # the limit; >1 means the policy is demanding torque the motor
+                # cannot deliver, which is the failure mode 48 N.m masked)
+                if _lim is not None:
+                    _l = _lim[:, _ix].abs().clamp(min=1e-6)
+                    extras["to_log"][f"act/tau_frac_{_g}"] = (_t / _l).mean()
+                    extras["to_log"][f"act/demand_frac_{_g}"] = (_c.abs() / _l).mean()
+                    extras["to_log"][f"act/demand_p99_{_g}"] = torch.quantile(
+                        (_c.abs() / _l).flatten().float(), 0.99
+                    )
+            # joint-level tracking error on the groups whose PD changed most,
+            # so "stiffer" can be told apart from "just saturating"
+            _err = (_r.data.joint_pos_target - _r.data.joint_pos).abs()
+            for _g in ("waist_yaw", "waist_pr", "ankle_pitch", "shoulder_pr", "knee"):
+                if _g in self._actdiag_idx:
+                    extras["to_log"][f"act/poserr_{_g}"] = _err[:, self._actdiag_idx[_g]].mean()
+        except Exception:  # diagnostics must never take down a training run
+            pass
+
         if self._motion_lib is not None and self._motion_lib.use_adaptive_sampling:
             extras["to_log"][
                 "adp_samp/num_episodes_min"

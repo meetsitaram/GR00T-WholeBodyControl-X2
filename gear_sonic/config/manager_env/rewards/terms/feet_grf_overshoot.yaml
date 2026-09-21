@@ -1,0 +1,16 @@
+feet_grf_overshoot:
+  _target_: isaaclab.managers.RewardTermCfg
+  func: gear_sonic.envs.manager_env.mdp:feet_grf_overshoot_penalty
+  # Penalize per-foot vertical GRF above soft_ratio x robot weight -- shapes
+  # the post-contact LOADING (a hard "catch" after a slow touchdown). Weight-
+  # normalized excess^2; forces under the threshold cost nothing.
+  weight: -0.02
+  params:
+    sensor_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "contact_forces"
+      body_names: ["left_ankle_roll_link", "right_ankle_roll_link"]
+    asset_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "robot"
+    soft_ratio: 1.5

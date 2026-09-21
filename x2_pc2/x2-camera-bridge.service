@@ -1,0 +1,22 @@
+[Unit]
+Description=X2 camera bridge: HAL camera topics -> ZMQ :5555 (Orbbec rgbd_head_front, for the Pico headset feed)
+# Boot service on PC2 (Jetson). Installed by x2_pc2/install_camera_bridge_service.sh. Restarts on
+# failure and waits for the HAL/Orbbec topics itself (the publisher republishes whatever arrives).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=run
+WorkingDirectory=/home/run/gear-sonic
+Environment=FASTRTPS_DEFAULT_PROFILES_FILE=/agibot/software/entry/cfg/ros_dds_configuration.xml
+# system numpy first: the user-site numpy 2.x breaks the system OpenCV; zmq/msgpack live in the user site
+Environment=PYTHONPATH=/usr/local/lib/python3.10/dist-packages:/home/run/.local/lib/python3.10/site-packages
+ExecStart=/bin/bash -lc 'source /opt/ros/humble/setup.bash && exec python3 gear_sonic_deploy/scripts/x2_pc2_camera_zmq_publisher.py --port 5555 --streams orbbec --udp-port 5556 --width 640 --height 360 --jpeg-quality 75 --publish-rate 30'
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/run/gear-sonic/log/camera_zmq.log
+StandardError=append:/home/run/gear-sonic/log/camera_zmq.log
+
+[Install]
+WantedBy=multi-user.target

@@ -34,3 +34,7 @@ Thumbs.db
 !motionbricks/motion_backbone/models/**
 !motionbricks/vqvae/models/
 !motionbricks/vqvae/models/**
+
+# never ship byte-code (the data/** negation above would otherwise re-include it)
+__pycache__/
+*.pyc

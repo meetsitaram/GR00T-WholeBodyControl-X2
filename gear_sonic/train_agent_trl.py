@@ -180,11 +180,35 @@ def main(config: OmegaConf):
     import torch  # noqa: E402
 
     ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
-    kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=6000))
+    # SONIC_PG_TIMEOUT_S: elastic multi-node runs set this low (~300) so a
+    # preempted node aborts collectives quickly and torchrun can re-rendezvous,
+    # instead of hanging survivors for the full default 100 minutes.
+    kwargs = InitProcessGroupKwargs(
+        timeout=timedelta(seconds=int(os.environ.get("SONIC_PG_TIMEOUT_S", "6000")))
+    )
     accelerator = Accelerator(
         gradient_accumulation_steps=training_args.gradient_accumulation_steps,
         kwargs_handlers=[ddp_kwargs, kwargs],
     )
+
+    # NCCL prime-barrier — must fire BEFORE any IsaacSim/Warp import below.
+    #
+    # On nodes where the CUDA driver and PyTorch's bundled NCCL differ at the
+    # minor version (e.g. driver 580/CUDA 13.0 vs. NCCL built against CUDA 13.2),
+    # the first NCCL kernel launch fails with `Cuda failure 'invalid argument'`
+    # at >=4 GPUs IF IsaacSim has already been imported. IsaacSim/PhysX populates
+    # CUDA state in a way that makes the very first cudaLaunchKernel through
+    # NCCL trip the driver's argument validation.
+    #
+    # The fix: warm up NCCL with a barrier RIGHT NOW, while the CUDA context is
+    # still pristine. After this point IsaacSim can do whatever it wants — NCCL
+    # has already JIT-cached its kernels and subsequent collectives work fine.
+    #
+    # Symptom you'd see without this barrier (in train_agent log on >=4 GPUs):
+    #   [N] enqueue.cc:76 NCCL WARN Cuda failure 'invalid argument'
+    # (first observed bringing up an 8x H100 node).
+    if accelerator.num_processes > 1:
+        accelerator.wait_for_everyone()
 
     device = str(accelerator.device)
     if device == "cuda":
@@ -207,6 +231,16 @@ def main(config: OmegaConf):
     if config.use_wandb and accelerator.is_main_process:
         project_name = f"{config.project_name}"
         run_name = config.experiment_dir.replace(f"{config.base_dir}/{project_name}/", "")
+        if run_name == config.experiment_dir:
+            # resume path: experiment_dir = checkpoint.parent carries no
+            # <base_dir>/<project>/ prefix, so the strip above is a no-op and
+            # the raw path would become the run name. Name it from the exp instead.
+            from datetime import datetime
+
+            run_name = (
+                f"{config.get('exp_var', 'resume')}"
+                f"-resume-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
         wandb_dir = Path(config.wandb.wandb_dir)
         wandb_dir.mkdir(exist_ok=True, parents=True)
         wandb_group = None if config.wandb.wandb_id is not None else config.wandb.wandb_group
@@ -215,7 +249,11 @@ def main(config: OmegaConf):
             project=project_name,
             entity=config.wandb.wandb_entity,
             name=run_name,
-            sync_tensorboard=True,
+            # sync_tensorboard was dropped: with it on, wandb ignores the
+            # explicit step=global_step in WandbCallback.on_log and auto-counts
+            # from 0, so a resumed run's dashboard restarted at 0. All training
+            # metrics go through wandb.log (no TB-only scalars in this path), so
+            # honoring step=global_step gives a continuous 2000->5000 x-axis.
             config=unresolved_conf,
             dir=wandb_dir,
             id=config.wandb.wandb_id,

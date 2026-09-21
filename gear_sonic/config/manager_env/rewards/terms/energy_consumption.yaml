@@ -1,0 +1,7 @@
+energy_consumption:
+  _target_: isaaclab.managers.RewardTermCfg
+  func: gear_sonic.envs.manager_env.mdp:energy_consumption
+  weight: -1e-4
+  params:
+    asset_cfg:
+      name: "robot"
