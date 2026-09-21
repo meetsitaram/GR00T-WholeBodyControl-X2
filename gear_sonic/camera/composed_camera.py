@@ -500,6 +500,21 @@ class ComposedCameraSensor(Sensor, SensorServer):
 class ComposedCameraClientSensor(Sensor, SensorClient):
     """ZMQ client that deserializes merged camera frames from the server."""
 
+    # Periodic "Image latency for X: Y ms" prints are useful when the
+    # publisher and subscriber share a clock, but become pure noise as
+    # soon as the two boxes are out of NTP sync -- e.g. PC2 running 4 s
+    # ahead of the laptop fills logs with ``-4000 ms`` lines that mask
+    # real freshness regressions. We track the steady-state offset
+    # PER CAMERA KEY (different cameras can be stamped from different
+    # clock sources -- USB head_front uses the host clock at capture,
+    # stereo MIPI cameras use their own ISP clock, etc. -- so a single
+    # global offset under-corrects whichever key has the largest skew).
+    # Once each key's offset is locked in, the per-frame print emits
+    # only when the *skew-corrected* latency exceeds a threshold.
+    _CLOCK_SKEW_WARMUP_SAMPLES = 30
+    _CLOCK_SKEW_PRINT_THRESHOLD_S = 0.020  # 20 ms wall-clock
+    _CLOCK_SKEW_REPORT_S = 0.250  # warn once when any |skew| > 250 ms
+
     def __init__(self, server_ip: str = "localhost", port: int = 5555):
         self.start_client(server_ip, port)
 
@@ -512,6 +527,14 @@ class ComposedCameraClientSensor(Sensor, SensorClient):
         self._last_new_message_time = None
         self._last_staleness_warning_time = 0.0
         self._staleness_warning_interval = 2.0
+
+        # Clock-skew tracking, indexed by camera key. ``_skew_samples``
+        # collects the first ``_CLOCK_SKEW_WARMUP_SAMPLES`` raw-latency
+        # samples per key; ``_clock_skew_s`` holds the locked-in
+        # per-key offset once warm-up completes for that key.
+        self._skew_samples: dict[str, list[float]] = {}
+        self._clock_skew_s: dict[str, float] = {}
+        self._skew_announced: set[str] = set()
 
         print("Initialized composed camera client sensor")
 
@@ -531,10 +554,62 @@ class ComposedCameraClientSensor(Sensor, SensorClient):
             self._latest_message = ImageMessageSchema.deserialize(message).asdict()
             self._last_new_message_time = current_time
 
+            ts_map = self._latest_message.get("timestamps") or {}
+            now_s = time.time()
+
+            # Stage 1 (warm-up, per key): accumulate raw latency samples
+            # until we have enough to estimate that key's steady-state
+            # offset. Each key locks in independently so a slow-starter
+            # (e.g. stereo cameras that come online after head_front)
+            # still gets corrected without forcing the others to wait.
+            for image_key, image_time in ts_map.items():
+                if image_key in self._clock_skew_s:
+                    continue
+                raw_latency = now_s - image_time
+                samples = self._skew_samples.setdefault(image_key, [])
+                samples.append(raw_latency)
+                if len(samples) >= self._CLOCK_SKEW_WARMUP_SAMPLES:
+                    sorted_samples = sorted(samples)
+                    median = sorted_samples[len(sorted_samples) // 2]
+                    # |median| < 1 s -> assume the value is real
+                    # transport latency (no meaningful skew). Otherwise
+                    # treat as a clock offset to subtract.
+                    skew = median if abs(median) > 1.0 else 0.0
+                    self._clock_skew_s[image_key] = skew
+                    self._skew_samples.pop(image_key, None)
+                    if (
+                        abs(skew) >= self._CLOCK_SKEW_REPORT_S
+                        and image_key not in self._skew_announced
+                    ):
+                        direction = "ahead of" if skew < 0 else "behind"
+                        print(
+                            f"[camera-client] {image_key}: detected "
+                            f"publisher/subscriber clock skew "
+                            f"~{skew * 1000:+.0f} ms (publisher is "
+                            f"{direction} subscriber); subtracting this "
+                            f"offset from per-frame latency prints for "
+                            f"this key. Fix by NTP-syncing PC2 and the "
+                            f"laptop (chrony / systemd-timesyncd) for "
+                            f"accurate diagnostics."
+                        )
+                        self._skew_announced.add(image_key)
+
+            # Stage 2 (steady state): per-N-frame latency print, but
+            # skew-corrected so the numbers reflect actual transport
+            # latency and only emit when meaningful. Keys still in
+            # warm-up are silently skipped here -- they'll appear
+            # below the threshold once their offset is locked in.
             if self.idx % 10 == 0:
-                for image_key, image_time in self._latest_message["timestamps"].items():
-                    image_latency = (time.time() - image_time) * 1000
-                    print(f"Image latency for {image_key}: {image_latency:.2f} ms")
+                for image_key, image_time in ts_map.items():
+                    skew = self._clock_skew_s.get(image_key)
+                    if skew is None:
+                        continue
+                    image_latency_s = (now_s - image_time) - skew
+                    if abs(image_latency_s) >= self._CLOCK_SKEW_PRINT_THRESHOLD_S:
+                        print(
+                            f"Image latency for {image_key}: "
+                            f"{image_latency_s * 1000:.2f} ms"
+                        )
 
             self._msg_received_time = time.time()
             self._avg_time_per_frame.append(self._msg_received_time - self._start_time)

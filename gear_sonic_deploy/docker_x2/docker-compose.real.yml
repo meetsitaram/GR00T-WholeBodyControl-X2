@@ -1,0 +1,64 @@
+# Real-robot DDS overlay for the X2 sim container.
+#
+# Usage (always with the base file):
+#   docker compose -f docker-compose.yml -f docker-compose.real.yml run --rm x2sim
+# or via the wrapper:
+#   ./start_real.sh
+#
+# What this overlay changes versus the base docker-compose.yml:
+#
+#   * ROS_LOCALHOST_ONLY: "0"        — un-quarantine: talk to the real
+#                                       robot on the SDK ethernet via DDS.
+#   * ROS_DOMAIN_ID:     "0"         — match the AgiBot SDK's default
+#                                       (record-and-replay/docker-compose.yml
+#                                       uses this same value, which is what
+#                                       lets it discover /aima/hal/* topics).
+#
+# What this overlay does NOT set anymore:
+#
+#   * CYCLONEDDS_URI                 — REMOVED. The image's RMW is FastDDS
+#                                       (`rmw_fastrtps_cpp`), which ignores
+#                                       this env entirely. Earlier copies
+#                                       of the file pinned it to a
+#                                       hard-coded NIC name (`enp10s0`,
+#                                       `enp2s0`, ...) inherited from
+#                                       AgiBot's record-and-replay / monitor
+#                                       references, but those were
+#                                       dead code on this image and only
+#                                       confused new operators when their
+#                                       NIC was named differently. With
+#                                       network_mode: host + FastDDS
+#                                       multicast discovery, ROS will find
+#                                       the robot on whichever interface
+#                                       has the L2/L3 path. If your host
+#                                       has multiple paths to the robot
+#                                       (e.g. wifi *and* SDK ethernet),
+#                                       set `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`
+#                                       and `CYCLONEDDS_URI=...` explicitly
+#                                       at the command line for that run.
+# What it does NOT change from the sim base:
+#   * network_mode: host             — kept; required for both DDS over the
+#                                       SDK ethernet AND the HTTP MC stop on
+#                                       PC1 (<PC1_IP>:50080).
+#   * X11 / NVIDIA passthrough       — kept; doesn't hurt to have them on
+#                                       even if we're not using a viewer.
+#   * Persistent colcon volumes      — kept; reuses the build artefacts the
+#                                       sim mode produced.
+#
+# Pre-flight outside this file (operator's responsibility):
+#   1. Plug the SDK cable into one of PC2/PC3's rear RJ45 dev ports.
+#   2. Configure the host NIC with a static IP on the SDK subnet (<LAPTOP_IP>/24).
+#   3. Confirm `ping <PC2_IP>` from the host (export PC2_HOST=<PC2_IP>).
+#   Without those, ROS_DOMAIN_ID=0 will still discover nothing because there
+#   is no route to PC2.
+
+services:
+  x2sim:
+    environment:
+      # Override the sim isolation. Compose merges environment maps key-by-key
+      # when both files use the dict form; the base file uses list form, but
+      # the dict form here still overrides because docker compose internally
+      # normalises both to a single map keyed by variable name.
+      ROS_LOCALHOST_ONLY: "0"
+      ROS_DOMAIN_ID: "0"
+      PYTHONUNBUFFERED: "1"

@@ -22,6 +22,43 @@ from gear_sonic.trl.utils import common
 from gear_sonic.utils.motion_lib import skeleton
 
 
+# Frames of robot-vs-SMPL length disagreement attributable to independent
+# resample rounding (the robot track is resampled to target_fps, smpl_joints is
+# used at its native rate). Beyond this the clip's fps labels are wrong.
+SMPL_LEN_TOLERANCE_FRAMES = 2
+_SMPL_LEN_WARNED: set = set()
+
+
+def _fit_smpl_len(tensor, n_robot, src, field):
+    """Reconcile a per-frame SMPL track against the robot track's frame count.
+
+    Rounding drift (<= SMPL_LEN_TOLERANCE_FRAMES) is absorbed by truncating or
+    edge-padding. A larger gap means the corpus fps labels disagree with the
+    data (e.g. a 30 fps clip relabeled 50), which silently destroys the
+    SMPL/robot correspondence — raise instead.
+    """
+    if tensor is None or tensor.shape[0] == n_robot:
+        return tensor
+    delta = tensor.shape[0] - n_robot
+    if abs(delta) > SMPL_LEN_TOLERANCE_FRAMES:
+        # A timebase error in ONE sidecar must not abort an 8-rank run mid-training
+        # (a fine-tune run died mid-training on one body-check clip, 2062 vs 2171,
+        # 2026-09-05): drop this clip's SMPL track -> zeros = the no-sidecar form, so
+        # the clip trains g1-only. Logged once per clip.
+        key = (str(src)[:200], field)
+        if key not in _SMPL_LEN_WARNED:
+            _SMPL_LEN_WARNED.add(key)
+            logger.warning(
+                f"[MotionLib] SMPL/robot length mismatch beyond tolerance for {src} [{field}]: "
+                f"{tensor.shape[0]} vs {n_robot} (timebase error) -> SMPL track dropped for this clip (zeros)."
+            )
+        return torch.zeros((n_robot,) + tuple(tensor.shape[1:]), dtype=tensor.dtype, device=tensor.device)
+    if delta > 0:
+        return tensor[:n_robot]
+    pad = tensor[-1:].repeat((-delta,) + (1,) * (tensor.dim() - 1))
+    return torch.cat([tensor, pad], dim=0)
+
+
 class FixHeightMode(enum.Enum):
     no_fix = 0
     full_fix = 1
@@ -413,6 +450,37 @@ class MotionLibBase:
 
             print(f"Loaded {len(self._motion_data_load)} motion files")  # noqa: T201
 
+        # FINE-TUNE DATASET external-target injection: merge in the fine-tune clips so
+        # freshly-retargeted targets can be pinned/trained without rebuilding the corpus.
+        # The fine-tune clips are AUTHORITATIVE: a clip whose key already exists in the
+        # base corpus is OVERRIDDEN by the fine-tune version (override_corpus, default
+        # True) -- this is essential when the corpus holds an inferior version of the
+        # same key, e.g. a stock-policy-executed DAMPED combat clip that must be
+        # replaced by its corrected/un-damped retarget. Set override_corpus=false for
+        # the old add-only behaviour (base takes precedence).
+        _ft_cfg = self.m_cfg.get("fine_tune_dataset", None) or {}
+        if _ft_cfg.get("enable", False) and _ft_cfg.get("motion_file", None):
+            try:
+                _ft_data = joblib.load(_ft_cfg["motion_file"])
+                _override = bool(_ft_cfg.get("override_corpus", True))
+                _added = _overridden = _kept = 0
+                for _k, _v in _ft_data.items():
+                    if _k not in self._motion_data_load:
+                        self._motion_data_load[_k] = _v
+                        _added += 1
+                    elif _override:
+                        self._motion_data_load[_k] = _v
+                        _overridden += 1
+                    else:
+                        _kept += 1
+                print(  # noqa: T201
+                    f"[MotionLib] fine_tune_dataset: injected {_added} new + overrode "
+                    f"{_overridden} existing target clips from {_ft_cfg['motion_file']} "
+                    f"({_kept} left as base-corpus, override_corpus={_override})."
+                )
+            except Exception as _e:  # noqa: BLE001
+                print(f"[MotionLib] fine_tune_dataset injection failed: {_e}")  # noqa: T201
+
         data_list = self._motion_data_load
 
         filter_motion_keys = self.m_cfg.get("filter_motion_keys", None)
@@ -437,6 +505,43 @@ class MotionLibBase:
                 ]
                 matched_keys.sort()
             data_list = {k: data_list[k] for k in matched_keys}
+
+        # Exact-key exclusion from a file. Prefer this over remove_motion_keys for
+        # large lists: prefix matching is O(motions x prefixes) -- measured 19 s
+        # per rank for 129k motions against 4.5k prefixes, paid by every rank on
+        # every run -- while exact keys are a single set lookup (0.004 s). Keeping
+        # the list in a file also leaves the exclusion auditable and diffable
+        # instead of inlining thousands of strings into the experiment yaml.
+        # Accepts one path or several, so unrelated exclusions stay in separate
+        # auditable files (e.g. prop/terrain-dependent references vs clips
+        # quarantined for non-finite data) instead of being merged into one
+        # undifferentiated blob.
+        remove_motion_keys_file = self.m_cfg.get("remove_motion_keys_file", None)
+        if remove_motion_keys_file is not None:
+            _paths = (
+                [remove_motion_keys_file]
+                if isinstance(remove_motion_keys_file, str)
+                else list(remove_motion_keys_file)
+            )
+            for _path in _paths:
+                with open(_path) as _fh:
+                    _drop = {ln.strip() for ln in _fh if ln.strip()}
+                _present = _drop & set(data_list)
+                for k in _present:
+                    del data_list[k]
+                print(  # noqa: T201
+                    f"[MotionLib] remove_motion_keys_file: dropped {len(_present)} of "
+                    f"{len(_drop)} listed keys -> {len(data_list)} motions remain "
+                    f"({_path})"
+                )
+                # A list that matches nothing is almost always a stale path or a
+                # key naming change, which would otherwise silently train on the
+                # full set -- the exact failure this exclusion exists to prevent.
+                if not _present:
+                    raise ValueError(
+                        f"remove_motion_keys_file matched ZERO keys: {_path}. "
+                        "Check the path and that the key naming matches this corpus."
+                    )
 
         remove_motion_keys = self.m_cfg.get("remove_motion_keys", None)
         if remove_motion_keys is not None:
@@ -1077,6 +1182,110 @@ class MotionLibBase:
             ).to(self._device)
 
         # sample_idxes = torch.tensor([self._motion_data_keys.tolist().index("0-KIT_8_WalkInClockwiseCircle04_poses")]).to(self._device)  # noqa: E501
+
+        # --- FINE-TUNE DATASET pinning (opt-in, fine-tune runs ONLY) ---
+        # For targeted fine-tuning of a PRE-TRAINED model: a small "fine-tune
+        # dataset" of target clips is pinned so it is ALWAYS in the loaded subset
+        # (and thus reliably trained), while the remaining load slots rotate over
+        # the base corpus for anti-forgetting. Needed because a small target set
+        # (e.g. the 34 slow-walk/manipulation teleop clips) is a tiny fraction of a
+        # large corpus AND does not trip the failure gates, so neither random nor
+        # failure-weighted loading reliably includes it.
+        #
+        # DOUBLE-GATED so it can NEVER activate on a from-scratch run: requires
+        #   motion_lib_cfg.fine_tune_dataset: { enable: true, pin_motion_keys: [...] }
+        # If `enable` is absent/false (the default), this is a no-op.
+        if random_sample:
+            if getattr(self, "_pin_motion_idxes", None) is None:
+                _ft_cfg = self.m_cfg.get("fine_tune_dataset", None) or {}
+                _ft_on = bool(_ft_cfg.get("enable", False))
+                _pin = []
+                if _ft_on:
+                    _keys_all = [str(k) for k in self._motion_data_keys.tolist()]
+                    # (a) motion_file: pin EVERY clip whose key appears in this pkl
+                    #     (the fine-tune dataset IS the file -- no patterns needed).
+                    _ft_keys = set()
+                    _ft_file = _ft_cfg.get("motion_file", None)
+                    if _ft_file:
+                        try:
+                            import joblib as _joblib
+                            _ft_keys = {str(k) for k in _joblib.load(_ft_file).keys()}
+                        except Exception as _e:  # noqa: BLE001
+                            logger.warning(
+                                f"[MotionLib] fine_tune_dataset.motion_file "
+                                f"load failed ({_e}); ignoring it."
+                            )
+                    # (b) pin_motion_keys: OPTIONAL substring fallback/supplement.
+                    _pin_patterns = _ft_cfg.get("pin_motion_keys", None)
+                    for _i, _k in enumerate(_keys_all):
+                        if (_k in _ft_keys) or (
+                            _pin_patterns
+                            and any(str(p).lower() in _k.lower() for p in _pin_patterns)
+                        ):
+                            _pin.append(_i)
+                    if _pin:
+                        logger.warning(
+                            "[MotionLib] FINE-TUNE DATASET MODE ON "
+                            "(fine_tune_dataset.enable=true) -> pinning "
+                            f"{len(_pin)} target motions as always-loaded every reshuffle"
+                            + (f" (from {_ft_file})" if _ft_file else "")
+                            + (f" + patterns {_pin_patterns}" if _pin_patterns else "")
+                            + ". For fine-tuning a pre-trained model; do NOT enable "
+                            "for from-scratch training."
+                        )
+                    else:
+                        logger.warning(
+                            "[MotionLib] fine_tune_dataset.enable=true but no clips "
+                            "matched (set motion_file and/or pin_motion_keys) -> "
+                            "nothing pinned."
+                        )
+                self._pin_motion_idxes = torch.as_tensor(
+                    _pin, dtype=sample_idxes.dtype, device=self._device
+                )
+            self._n_loaded_finetune = 0  # count of fine-tune clips at the FRONT of the loaded set
+            if self._pin_motion_idxes.numel() > 0:
+                _n_pin = int(self._pin_motion_idxes.numel())
+                # fine_tune_dataset.load_fraction (0..1]: what FRACTION OF THE
+                # FINE-TUNE DATASET to load each reshuffle. 1.0 (default) = ALL
+                # target clips loaded every reshuffle (e.g. all 34). <1.0 loads a
+                # fresh random subset each reshuffle -- useful for a large
+                # fine-tune dataset you don't want fully resident at once. The
+                # loaded target clips take the first slots; the rest of the
+                # num_motions_to_load slots are the normal base-corpus sample.
+                _frac = float(
+                    (self.m_cfg.get("fine_tune_dataset", None) or {}).get(
+                        "load_fraction", 1.0
+                    )
+                )
+                _frac = max(0.0, min(1.0, _frac))
+                # fine_tune_dataset.load_max_clips (int, default 100): hard cap on how
+                # many fine-tune clips are RESIDENT per reshuffle -- a fresh uniform
+                # random subset each time ("uniform rotating residency"). This is the
+                # cap the S1 / stage-1b runs trained with (as-run node-5 code, never
+                # committed; restored 2026-09-05). null/0 = no cap.
+                _cap = (self.m_cfg.get("fine_tune_dataset", None) or {}).get("load_max_clips", 100)
+                _cap = int(_cap) if _cap else 0
+                _n = int(min(round(_frac * _n_pin), num_motion_to_load))
+                if _cap > 0:
+                    _n = min(_n, _cap)
+                if not getattr(self, "_ft_residency_logged", False):
+                    self._ft_residency_logged = True
+                    logger.warning(
+                        f"[MotionLib] fine-tune residency: {_n} of {_n_pin} pinned clips resident per "
+                        f"reshuffle (load_max_clips={_cap or 'none'}, load_fraction={_frac:.3f}); "
+                        f"{'a fresh random subset each reshuffle' if _n < _n_pin else 'all pinned clips every reshuffle'}."
+                    )
+                if _n >= _n_pin:
+                    _sel = self._pin_motion_idxes
+                else:  # random subset of the fine-tune dataset this reshuffle
+                    _perm = torch.randperm(_n_pin, device=self._device)[:_n]
+                    _sel = self._pin_motion_idxes[_perm]
+                _n = int(_sel.numel())
+                self._n_loaded_finetune = _n
+                sample_idxes = torch.cat(
+                    [_sel, sample_idxes[_n:]]
+                )[:num_motion_to_load]
+
         self._curr_motion_ids = sample_idxes
         self.curr_motion_keys = (
             [self._motion_data_keys[sample_idxes.cpu()]]
@@ -1577,6 +1786,11 @@ class MotionLibBase:
         logger.info(
             f"Loaded {num_motions:d} motions with a total length of {total_len:.3f}s and {self.body_pos_w.shape[0]} frames."  # noqa: E501
         )
+        # NOTE: verifying the fine-tune targets are loaded needs no extra logging.
+        # Pinned clips are PREPENDED to sample_idxes, so the existing
+        # "Current motion keys: {curr_motion_keys[:10]}" line above shows them at
+        # the front of every reshuffle, and the one-time "FINE-TUNE DATASET MODE
+        # ON -> pinning N motions" warning reports the pinned count.
 
         del (
             motions,
@@ -1901,19 +2115,11 @@ class MotionLibBase:
                         if "smpl_joints" in curr_smpl_data:
                             smpl_joints = torch.tensor(curr_smpl_data["smpl_joints"]).float()
                             curr_motion["smpl_joints"] = smpl_joints
-                            if (
-                                curr_motion["smpl_joints"].shape[0]
-                                != curr_motion["global_translation"].shape[1]
-                            ):
-                                print(  # noqa: T201
-                                    f"Length mismatch: smpl_joints={curr_motion['smpl_joints'].shape[0]}, "
-                                    f"global_translation={curr_motion['global_translation'].shape[1]}"
-                                )
-                                print(smpl_data_list[f], motion_data_list[f])  # noqa: T201
-
-                            assert (
-                                curr_motion["smpl_joints"].shape[0]
-                                == curr_motion["global_translation"].shape[1]
+                            curr_motion["smpl_joints"] = _fit_smpl_len(
+                                curr_motion["smpl_joints"],
+                                curr_motion["global_translation"].shape[1],
+                                smpl_data_list[f],
+                                "smpl_joints",
                             )
                         else:
                             num_frames = curr_motion["global_translation"].shape[1]
@@ -1922,19 +2128,22 @@ class MotionLibBase:
                             )
                         if "transl" in curr_smpl_data:
                             transl = torch.tensor(curr_smpl_data["transl"]).float()
-                            curr_motion["smpl_transl"] = transl
-                            assert (
-                                curr_motion["smpl_transl"].shape[0]
-                                == curr_motion["global_translation"].shape[1]
+                            curr_motion["smpl_transl"] = _fit_smpl_len(
+                                transl,
+                                curr_motion["global_translation"].shape[1],
+                                smpl_data_list[f],
+                                "smpl_transl",
                             )
                         else:
                             num_frames = curr_motion["global_translation"].shape[1]
                             curr_motion["smpl_transl"] = torch.zeros(num_frames, 3).to(
                                 curr_motion["global_translation"]
                             )
-                        assert (
-                            curr_motion["smpl_pose"].shape[0]
-                            == curr_motion["global_translation"].shape[1]
+                        curr_motion["smpl_pose"] = _fit_smpl_len(
+                            curr_motion["smpl_pose"],
+                            curr_motion["global_translation"].shape[1],
+                            smpl_data_list[f],
+                            "smpl_pose",
                         )
 
                         if freeze_frame_aug:
@@ -2128,13 +2337,12 @@ class MotionLibBase:
                 if self.has_action:
                     curr_motion.action = to_torch(curr_file["action"]).clone()[start:end]
 
-                # Extract hand DOFs if motion file has more than 29 DOFs
                 hand_dof_count = self.m_cfg.get("hand_dof_count", 0)
                 if hand_dof_count > 0 and "dof" in curr_file:
                     raw_dof = to_torch(curr_file["dof"]).clone()[start:end]
-                    if raw_dof.shape[-1] > 29:
-                        # Extract hand DOFs (indices 29 onwards) and interpolate to target FPS
-                        hand_dof = raw_dof[:, 29 : 29 + hand_dof_count]
+                    base_dof = self.humanoid.num_dof
+                    if raw_dof.shape[-1] > base_dof:
+                        hand_dof = raw_dof[:, base_dof : base_dof + hand_dof_count]
                         if curr_file["fps"] != self.target_fps:
                             # Simple linear interpolation for hand DOFs
                             num_target_frames = curr_motion["dof_pos"].shape[0]
@@ -2219,11 +2427,54 @@ class MotionLibBase:
         motion_time_steps = (motion_time * self._sim_fps).floor().int()
         return motion_time_steps
 
-    def sample_motions(self, n):
-        motion_ids = torch.multinomial(
-            self._sampling_batch_prob, num_samples=n, replacement=True
-        ).to(self._device)
+    def _apply_finetune_sample_rate(self, motion_ids, motion_time_steps=None):
+        """Route a guaranteed fraction of episodes to the pinned fine-tune dataset.
 
+        fine_tune_dataset.finetune_sample_rate (0..1): the fraction of per-episode
+        samples drawn UNIFORMLY from the pinned target clips (which sit at loaded
+        indices 0.._n_loaded_finetune), independent of the base adaptive sampler.
+        This decouples target training emphasis from both the dataset size and the
+        base sampling, and -- being a separate route -- it does NOT show up as
+        adaptive-sampler concentration (num_concentrated_bins stays clean). No-op
+        unless fine_tune_dataset.enable and finetune_sample_rate > 0.
+        """
+        _ft_cfg = self.m_cfg.get("fine_tune_dataset", None) or {}
+        if not _ft_cfg.get("enable", False):
+            return motion_ids, motion_time_steps
+        rate = float(_ft_cfg.get("finetune_sample_rate", 0.0))
+        n_ft = int(getattr(self, "_n_loaded_finetune", 0))
+        if rate <= 0.0 or n_ft <= 0:
+            return motion_ids, motion_time_steps
+        route = torch.rand(motion_ids.shape[0], device=self._device) < rate
+        n_route = int(route.sum())
+        if n_route == 0:
+            return motion_ids, motion_time_steps
+        new_ids = torch.randint(0, n_ft, (n_route,), device=self._device)
+        motion_ids = motion_ids.clone()
+        motion_ids[route] = new_ids.to(motion_ids.dtype)
+        if motion_time_steps is not None:  # give the routed clips a valid random frame
+            new_times = self.sample_time_steps(new_ids)
+            motion_time_steps = motion_time_steps.clone()
+            motion_time_steps[route] = new_times.to(motion_time_steps.dtype)
+        return motion_ids, motion_time_steps
+
+    def sample_motions(self, n):
+        prob = self._sampling_batch_prob
+        # Same leak as the adaptive path -- see _mask_finetune_from_adaptive.
+        _ft = self.m_cfg.get("fine_tune_dataset", None) or {}
+        n_ft = int(getattr(self, "_n_loaded_finetune", 0))
+        if _ft.get("enable", False) and _ft.get("exclusive_route", False) and n_ft > 0:
+            prob = prob.clone()
+            prob[:n_ft] = 0.0
+            tot = prob.sum()
+            if tot > 0:
+                prob = prob / tot
+            else:
+                prob = self._sampling_batch_prob
+        motion_ids = torch.multinomial(
+            prob, num_samples=n, replacement=True
+        ).to(self._device)
+        motion_ids, _ = self._apply_finetune_sample_rate(motion_ids)
         return motion_ids
 
     def get_motion_ids_in_dataset(self, motion_ids):
@@ -2438,6 +2689,12 @@ class MotionLibBase:
                 {
                     "adp_samp_num_episodes": self.adp_samp_num_episodes,
                     "adp_samp_num_failures": self.adp_samp_num_failures,
+                    # Corpus fingerprint, so a LATER run can tell "the corpus grew
+                    # at the end" (safe to prefix-restore) apart from "the corpus
+                    # changed underneath me" (must discard). Bins are laid out
+                    # per-motion-per-frame-window, so identical leading frame
+                    # counts => identical leading bins. See load_state_dict.
+                    "adp_samp_num_frames": self.adp_samp_num_frames,
                 }
             )
         return state_dict
@@ -2452,12 +2709,80 @@ class MotionLibBase:
             state_dict: Dict previously returned by ``get_state_dict()``.
         """
         if self.use_adaptive_sampling and "adp_samp_num_episodes" in state_dict:
-            if len(self.adp_samp_num_failures) != len(state_dict["adp_samp_num_failures"]):
-                print("Adaptive sampling state dict does not match. Skipping load.")  # noqa: T201
-                return
+            _saved_ep = state_dict["adp_samp_num_episodes"]
+            _saved_fa = state_dict["adp_samp_num_failures"]
+            _n_new, _n_old = len(self.adp_samp_num_failures), len(_saved_fa)
 
-            self.adp_samp_num_episodes[:] = state_dict["adp_samp_num_episodes"].to(self._device)
-            self.adp_samp_num_failures[:] = state_dict["adp_samp_num_failures"].to(self._device)
+            _n_copy = _n_old
+            if _n_new != _n_old:
+                # APPEND-ONLY CORPUS GROWTH (the fine-tune-corpus update case).
+                # Bins are a per-motion concatenation, so if the saved per-motion
+                # frame counts are an exact PREFIX of the current ones, every old
+                # bin still denotes the same (motion, frame-window) and the extra
+                # bins at the tail are purely new. That is the ONLY safe way to
+                # keep hard-won difficulty statistics across a corpus change --
+                # an exact-length check throws them away for a pure append, and a
+                # blind copy corrupts them for anything else.
+                _prefix_ok = False
+                _saved_nf = state_dict.get("adp_samp_num_frames", None)
+                if _saved_nf is not None and _n_new > _n_old:
+                    _saved_nf = _saved_nf.to(self._device)
+                    _m = len(_saved_nf)
+                    _prefix_ok = _m <= len(self.adp_samp_num_frames) and bool(
+                        torch.equal(self.adp_samp_num_frames[:_m], _saved_nf)
+                    )
+                elif (
+                    _saved_nf is None
+                    and _n_new > _n_old
+                    and self.adaptive_sampling_cfg.get("allow_legacy_prefix_restore", False)
+                ):
+                    # Checkpoint predates the fingerprint. Bin counts are a
+                    # monotone per-motion cumulative sum, so there is AT MOST ONE
+                    # motion boundary M with cumulative bins == _n_old; finding it
+                    # means the old bins line up with the first M motions. That is
+                    # necessary but NOT sufficient -- it cannot detect a base-corpus
+                    # clip whose length changed -- so it is opt-in and only correct
+                    # when the base corpus is untouched and the new clips were
+                    # appended (the fine-tune-corpus update case).
+                    _cum = torch.cumsum(
+                        torch.tensor(
+                            [len(b) for b in self.orig_motion_id_to_bins],
+                            device=self._device,
+                        ),
+                        0,
+                    )
+                    _prefix_ok = bool((_cum == _n_old).any())
+                    if _prefix_ok:
+                        _m = int((_cum == _n_old).nonzero()[0]) + 1
+                        print(  # noqa: T201
+                            "[MotionLib] LEGACY adaptive-sampling restore "
+                            "(allow_legacy_prefix_restore=true): no corpus "
+                            f"fingerprint in the checkpoint, but {_n_old} bins "
+                            f"lands exactly on a motion boundary (first {_m} "
+                            "motions). Restoring on the ASSUMPTION that the base "
+                            "corpus is byte-identical and the new clips were "
+                            "appended. If the base corpus changed, this is WRONG."
+                        )
+                if not _prefix_ok:
+                    print(  # noqa: T201
+                        "[MotionLib] ADAPTIVE SAMPLING STATE DISCARDED: "
+                        f"{_n_old} saved bins vs {_n_new} current, and the saved "
+                        "per-motion frame counts are not a prefix of the current "
+                        "ones (corpus reordered, a clip changed length, or the "
+                        "checkpoint predates the fingerprint). The sampler "
+                        "restarts UNIFORM -- expect a difficulty-targeting "
+                        "transient for a few hundred iterations."
+                    )
+                    return
+                _n_copy = _n_old
+                print(  # noqa: T201
+                    f"[MotionLib] adaptive sampling: corpus grew {_n_old} -> "
+                    f"{_n_new} bins by append; prefix-restoring {_n_copy} bins "
+                    "of episode/failure history, new bins start at the prior."
+                )
+
+            self.adp_samp_num_episodes[:_n_copy] = _saved_ep.to(self._device)
+            self.adp_samp_num_failures[:_n_copy] = _saved_fa.to(self._device)
             self.sync_and_compute_adaptive_sampling(sync_across_gpus=False)
         return
 
@@ -2811,6 +3136,55 @@ class MotionLibBase:
 
         self.adp_samp_active_motion_bins = torch.cat(self.adp_samp_active_motion_bins, dim=0)
         self.update_adaptive_sampling_probabilities()
+        self._mask_finetune_from_adaptive()
+
+    def _mask_finetune_from_adaptive(self):
+        """Make `finetune_sample_rate` mean what it says.
+
+        THE BUG THIS FIXES. Pinning loads every fine-tune clip into the working
+        set (255 of 1024 slots at load_fraction 1.0), which ALSO puts them in
+        the pool the adaptive sampler draws from. So they are reachable twice:
+        once via the forced `finetune_sample_rate` route, and again as ordinary
+        draws. At rate 0.05 the realised share was ~17-29%, not 5% -- the rate
+        is a FLOOR, not the share, and no value of it can fix that because even
+        at 0.0 the pinning alone still delivers ~22%.
+
+        With `exclusive_route: true` the pinned bins get zero probability in the
+        adaptive sampler, so the forced route is the ONLY path to a fine-tune
+        clip and the realised share equals the configured rate exactly.
+
+        Residency is unaffected: the clips stay loaded (warm, no reload cost),
+        and `load_fraction` still controls how many slots they occupy --
+        emphasis and residency become independent knobs instead of one
+        accidentally driving the other.
+        """
+        _ft = self.m_cfg.get("fine_tune_dataset", None) or {}
+        if not _ft.get("enable", False) or not _ft.get("exclusive_route", False):
+            return
+        n_ft = int(getattr(self, "_n_loaded_finetune", 0))
+        if n_ft <= 0 or getattr(self, "adp_sampling_active_prob", None) is None:
+            return
+        # active bins -> original motion id -> batch-local id; the pinned clips
+        # are the first n_ft entries of _curr_motion_ids by construction.
+        orig = self.adp_samp_bins[self.adp_samp_active_motion_bins, 0]
+        local = self.orig_motion_id_to_motion_ids[orig]
+        keep = (local >= n_ft)
+        if not bool(keep.any()):
+            return  # degenerate: everything loaded is fine-tune; leave as-is
+        p = self.adp_sampling_active_prob * keep.to(self.adp_sampling_active_prob.dtype)
+        tot = p.sum()
+        if tot <= 0:
+            return
+        self.adp_sampling_active_prob = p / tot
+        if not getattr(self, "_ft_mask_logged", False):
+            self._ft_mask_logged = True
+            logger.warning(
+                "[MotionLib] fine_tune_dataset.exclusive_route=true -> %d pinned "
+                "clips REMOVED from the adaptive sampler; they are now reachable "
+                "ONLY via finetune_sample_rate, so the realised share equals the "
+                "configured rate (%.3f) instead of exceeding it.",
+                n_ft, float(_ft.get("finetune_sample_rate", 0.0)),
+            )
 
     def sample_motion_ids_and_time_steps(self, n):
         """Sample motion IDs and time steps using adaptive sampling probabilities.
@@ -2844,4 +3218,7 @@ class MotionLibBase:
         if pre_failure_sample_window > 0:
             offset = torch.randint(pre_failure_sample_window, (n,), device=self._device)
             motion_time_steps = (motion_time_steps - offset).clamp_min(0)
+        motion_ids, motion_time_steps = self._apply_finetune_sample_rate(
+            motion_ids, motion_time_steps
+        )
         return motion_ids, motion_time_steps.int()

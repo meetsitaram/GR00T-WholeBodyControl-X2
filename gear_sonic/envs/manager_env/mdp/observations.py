@@ -609,6 +609,32 @@ def command_multi_future_joint_pos(
         return command.command_multi_future_joint_pos
 
 
+def command_multi_future_joint_vel(
+    env: ManagerBasedEnv, command_name: str, non_flatten=False
+) -> torch.Tensor:
+    """Get reference joint velocities for multiple future frames.
+
+    Mirrors :func:`command_multi_future_joint_pos` for velocities. Used by the
+    stock-G1-ONNX feasibility sweep, whose g1-mode encoder consumes
+    ``motion_joint_velocities_10frame_step5`` (see
+    ``gear_sonic/scripts/g1_onnx_policy_shim.py``).
+
+    Args:
+        command_name: Name of the tracking command term.
+        non_flatten: If True, return shape (num_envs, num_future_frames, num_joints).
+
+    Returns:
+        torch.Tensor: Joint velocities, shape (num_envs, num_future_frames * num_joints)
+            when flattened.
+    """
+    command: commands.TrackingCommand = env.command_manager.get_term(command_name)
+    if non_flatten:
+        return command.joint_vel_multi_future.reshape(
+            command.num_envs, command.num_future_frames, -1
+        )
+    return command.joint_vel_multi_future
+
+
 def command_multi_future_joint_body_pos(
     env: ManagerBasedEnv, command_name: str, non_flatten=False
 ) -> torch.Tensor:

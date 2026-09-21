@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model
+    href="http://download.ros.org/schema/package_format3.xsd"
+    schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>agi_x2_deploy_onnx_ref</name>
+  <version>0.1.0</version>
+  <description>
+    Reference real-robot deploy harness for the AgiBot X2 Ultra (31 DOF).
+    Loads a fused encoder+decoder ONNX policy exported from the SONIC training
+    pipeline, builds the IsaacLab-ordered proprioception (990 D) and tokenizer
+    (680 D) observations from live AimDK ROS 2 state, and publishes
+    PD-target joint commands at 500 Hz with on-board stiffness/damping that
+    matches the trained implicit-PD spec.
+
+    Reference deploy harness (X2 ONNX deploy plan, deploy-harness phase).
+  </description>
+  <maintainer email="dev@example.com">SONIC team</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>aimdk_msgs</depend>
+
+  <!-- onnxruntime is found via find_package(onnxruntime) or by manual hints
+       passed at CMake configure time (-DONNXRUNTIME_ROOT=...). It is NOT a
+       ROS package, so we do not list it here. -->
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

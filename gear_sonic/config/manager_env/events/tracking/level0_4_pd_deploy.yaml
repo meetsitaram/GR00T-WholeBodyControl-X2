@@ -1,0 +1,41 @@
+# level0_4 + actuator-gain randomization over the DEPLOY-BRACKETING range.
+#
+# Identical to level0_4_pd.yaml except it composes
+# terms/randomize_actuator_gains_deploy instead of the +/-15% variant. Use this
+# for any run whose output is intended to run on the real X2 under bigrun.yaml
+# (i.e. all of them).
+#
+# See terms/randomize_actuator_gains_deploy.yaml for why the range differs and
+# for the deploy failure that motivated it.
+
+defaults:
+  - terms/physics_material@_here_
+  - terms/add_joint_default_pos@_here_
+  - terms/base_com@_here_
+  - terms/push_robot@_here_
+  - terms/randomize_rigid_body_mass@_here_
+  - terms/randomize_actuator_gains_deploy@_here_
+
+_target_: gear_sonic.envs.manager_env.mdp.events.EventCfg
+
+randomize_rigid_body_mass:
+  mode: "startup"
+  params:
+    asset_cfg:
+      _target_: isaaclab.managers.SceneEntityCfg
+      name: "robot"
+      body_names: ".*wrist_yaw.*|torso_link"
+    mass_distribution_params: [0.8, 2.5]
+    operation: "scale"
+
+push_robot:
+  mode: "interval"
+  interval_range_s: [4.0, 6.0]
+  params:
+    velocity_range:
+      x: [-0.5, 0.5]
+      y: [-0.5, 0.5]
+      z: [-0.2, 0.2]
+      roll: [-0.52, 0.52]
+      pitch: [-0.52, 0.52]
+      yaw: [-0.78, 0.78]

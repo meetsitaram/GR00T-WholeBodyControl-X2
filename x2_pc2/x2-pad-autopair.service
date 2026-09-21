@@ -1,0 +1,17 @@
+[Unit]
+Description=X2 gamepad autopair + sonic ritual daemon
+After=bluetooth.target network.target
+Wants=bluetooth.target
+
+[Service]
+User=run
+# Paths are the default PC2_PREFIX; x2_pc2/install_pad_autopair_service.sh
+# rewrites them when the install prefix differs.
+ExecStart=/home/run/gear-sonic/venv/bin/python /home/run/gear-sonic/x2_pad_autopair.py --start-cmd /home/run/gear-sonic/ritual_start_demo.sh
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/run/gear-sonic/log/pad_autopair.log
+StandardError=append:/home/run/gear-sonic/log/pad_autopair.log
+
+[Install]
+WantedBy=multi-user.target

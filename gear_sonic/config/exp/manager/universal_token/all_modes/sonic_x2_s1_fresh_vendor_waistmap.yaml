@@ -1,0 +1,80 @@
+# @package _global_
+# S1 -- fresh vendor-plant run of the frozen-G1-core lineage WITH the wrist
+# and waist RANGE-MAP fixes.
+#
+# Self-contained delta on sonic_x2_frozen_core_t2 (bigrun / phase2 / phase2b /
+# s0 intermediates folded in):
+#   bigrun  : 12288 envs/GPU, soft-landing reward terms at the X2 weights
+#   phase2  : uniform_sampling_rate 0.5 (fine-tune injection OFF here)
+#   phase2b : tracking_wrist_dof reward (wrist pin fix)
+#   s0      : fresh start on the vendor plant, remap_wrist_ranges
+#   s1      : remap_waist_ranges
+#
+# WHY the waist map: the phi waist_pitch row was fit range-blind at
+# dec_a=+1.287 (AMPLIFYING) into a joint with 67% of G1's travel; the
+# resulting ~1.9x overdrive made the frozen core's reactive balance leans
+# command past the stop rail-to-rail (robot snap-backs). Now slope = span
+# ratio (~0.67 pitch, ~1.0 roll) from hand-measured hardware stops, with
+# TRUE-inverse enc rows so the core perceives the stop as full lean. The MJCF
+# waist ranges are the measured spec (pitch +-0.349 = 20 deg, roll +-0.5236
+# = 30 deg). Fresh start MANDATORY: the range maps rescale the action space;
+# no resume across that boundary.
+#
+# Launch (FRESH):
+#   +exp=manager/universal_token/all_modes/sonic_x2_s1_fresh_vendor_waistmap
+#   ++num_envs=12288 ++algo.config.num_learning_iterations=20000
+#   (NO +checkpoint, NO +resume)
+#
+# LAUNCH INVARIANTS:
+#   [ ] "[waist-range-map] waist_pitch<-waist_pitch a=+0.6xx" banner
+#   [ ] "[frozen-core-actor] waist range-map APPLIED" (once per rank)
+#   [ ] MJCF loaded shows waist_pitch range 0.349066 (not 0.314)
+#   [ ] Env/act demand_p99_waist_pr settles LOWER than an un-mapped run
+#
+# Required environment: none (MOTION_FILE defaults to the demo bank;
+# G1_CHECKPOINT defaults to the HF release core).
+defaults:
+  - /exp/manager/universal_token/all_modes/sonic_x2_frozen_core_t2
+  - override /manager_env/rewards: tracking/base_5point_local_feet_acc_softland
+  - _self_
+
+exp_var: s1_fresh_vendor_waistmap
+
+num_envs: 12288          # PER GPU under accelerate (H100/H200); 4096 on a 32 GB card
+
+manager_env:
+  rewards:
+    feet_impact_vel:
+      weight: -1.0
+    feet_grf_overshoot:
+      weight: -0.4
+      params:
+        soft_ratio: 1.2
+    tracking_wrist_dof:
+      _target_: isaaclab.managers.RewardTermCfg
+      func: gear_sonic.envs.manager_env.mdp:tracking_dof_subset_error
+      weight: 0.5
+      params:
+        command_name: motion
+        std: 0.35
+        joint_names:
+          - left_wrist_pitch_joint
+          - left_wrist_roll_joint
+          - right_wrist_pitch_joint
+          - right_wrist_roll_joint
+  commands:
+    motion:
+      motion_lib_cfg:
+        adaptive_sampling:
+          uniform_sampling_rate: 0.5
+        fine_tune_dataset:
+          enable: false
+          override_corpus: false
+          finetune_sample_rate: 0.0
+
+algo:
+  config:
+    actor:
+      backbone:
+        remap_wrist_ranges: true
+        remap_waist_ranges: true

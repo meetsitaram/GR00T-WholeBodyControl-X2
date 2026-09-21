@@ -1,0 +1,8 @@
+tracking_vr_2wrists_local_ori:
+  _target_: isaaclab.managers.RewardTermCfg
+  func: gear_sonic.envs.manager_env.mdp:tracking_local_vr_2wrists_ori_error
+  weight: 0.4
+  params:
+    command_name: "motion"
+    std: 0.1
+    body_names: ["left_wrist_yaw_link", "right_wrist_yaw_link"]

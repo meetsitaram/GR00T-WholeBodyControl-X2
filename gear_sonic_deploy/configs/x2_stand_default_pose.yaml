@@ -1,0 +1,45 @@
+# Captured from MC STAND_DEFAULT mode.
+# Captured: 2026-05-03T18:55:39.411283
+# Window: 2.0 s of joint command traffic from MC.
+# Per-joint median of (position, velocity, effort, stiffness, damping).
+#
+# Use this as the target pose for end-of-run HOLD_FOR_MC handover
+# so our deploy node lands the robot in exactly the pose MC will
+# resume from (no jolt at the policy->MC takeover boundary).
+
+stand_default_pose:
+  leg:
+    - {name: left_hip_pitch_joint, position: -0.277067, velocity: +0.000000, effort: +0.000000, stiffness: +100.000, damping: +4.000}
+    - {name: left_hip_roll_joint, position: +0.008893, velocity: +0.000000, effort: +0.000000, stiffness: +100.000, damping: +3.000}
+    - {name: left_hip_yaw_joint, position: -0.020212, velocity: +0.000000, effort: +0.000000, stiffness: +100.000, damping: +3.000}
+    - {name: left_knee_joint, position: +0.466950, velocity: +0.000000, effort: +0.000000, stiffness: +150.000, damping: +5.000}
+    - {name: left_ankle_pitch_joint, position: -0.119242, velocity: +0.000000, effort: +0.000000, stiffness: +40.000, damping: +3.000}
+    - {name: left_ankle_roll_joint, position: -0.024329, velocity: +0.000000, effort: +0.000000, stiffness: +30.000, damping: +2.000}
+    - {name: right_hip_pitch_joint, position: -0.267801, velocity: +0.000000, effort: +0.000000, stiffness: +100.000, damping: +4.000}
+    - {name: right_hip_roll_joint, position: -0.049566, velocity: +0.000000, effort: +0.000000, stiffness: +100.000, damping: +3.000}
+    - {name: right_hip_yaw_joint, position: +0.001303, velocity: +0.000000, effort: +0.000000, stiffness: +100.000, damping: +3.000}
+    - {name: right_knee_joint, position: +0.428615, velocity: +0.000000, effort: +0.000000, stiffness: +150.000, damping: +5.000}
+    - {name: right_ankle_pitch_joint, position: -0.146953, velocity: +0.000000, effort: +0.000000, stiffness: +40.000, damping: +3.000}
+    - {name: right_ankle_roll_joint, position: +0.015512, velocity: +0.000000, effort: +0.000000, stiffness: +30.000, damping: +2.000}
+  waist:
+    - {name: waist_yaw_joint, position: +0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +40.000, damping: +8.000}
+    - {name: waist_pitch_joint, position: -0.049856, velocity: +0.000000, effort: +0.000000, stiffness: +40.000, damping: +5.000}
+    - {name: waist_roll_joint, position: -0.027222, velocity: +0.000000, effort: +0.000000, stiffness: +40.000, damping: +5.000}
+  arm:
+    - {name: left_shoulder_pitch_joint, position: +0.400000, velocity: -0.000000, effort: +0.000000, stiffness: +30.000, damping: +1.000}
+    - {name: left_shoulder_roll_joint, position: -0.000000, velocity: -0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: left_shoulder_yaw_joint, position: -0.000000, velocity: -0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: left_elbow_joint, position: -1.200000, velocity: -0.000000, effort: +0.000000, stiffness: +50.000, damping: +1.000}
+    - {name: left_wrist_yaw_joint, position: -0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +50.000, damping: +1.000}
+    - {name: left_wrist_pitch_joint, position: -0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: left_wrist_roll_joint, position: -0.000000, velocity: -0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: right_shoulder_pitch_joint, position: +0.400000, velocity: +0.000000, effort: +0.000000, stiffness: +30.000, damping: +1.000}
+    - {name: right_shoulder_roll_joint, position: +0.000000, velocity: -0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: right_shoulder_yaw_joint, position: -0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: right_elbow_joint, position: -1.200000, velocity: +0.000000, effort: +0.000000, stiffness: +50.000, damping: +1.000}
+    - {name: right_wrist_yaw_joint, position: -0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +50.000, damping: +1.000}
+    - {name: right_wrist_pitch_joint, position: +0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+    - {name: right_wrist_roll_joint, position: -0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +20.000, damping: +1.000}
+  head:
+    - {name: head_yaw_joint, position: +0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +3.400, damping: +0.114}
+    - {name: head_pitch_joint, position: +0.000000, velocity: +0.000000, effort: +0.000000, stiffness: +10.000, damping: +0.800}

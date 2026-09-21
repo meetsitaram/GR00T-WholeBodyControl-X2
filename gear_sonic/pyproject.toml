@@ -60,6 +60,11 @@ data_collection = [
     "pin",
     "tyro",
     "pyttsx3==2.90",
+    # gTTS renders the calibration / recapture audio prompts that the
+    # WebXR client serves as MP3 to Quest 3 (the headset's built-in
+    # speechSynthesis is unreliable inside immersive-ar). Required by
+    # gear_sonic.utils.teleop.vr.quest3_audio_prompts.
+    "gtts>=2.5",
     "av>=14.2",
     "opencv-python",
     "lerobot @ git+https://github.com/huggingface/lerobot.git@a445d9c9da6bea99a8972daa4fe1fdd053d711d2",

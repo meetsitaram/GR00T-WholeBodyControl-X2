@@ -1,0 +1,623 @@
+# X2 heuristic-planner primitive recipes.
+#
+# Source of truth for the runtime ``x2_planner_primitives.pkl``. Built by
+# ``gear_sonic/scripts/build_x2_planner_primitives.py``. Hand-edited.
+#
+# Re-run after editing (the demo bank is the shipped source library; see
+# tools/build_demo_bank_from_upstream.sh, which runs this for you):
+#
+#     .venv/bin/python -m gear_sonic.scripts.build_x2_planner_primitives \
+#         --source gear_sonic/data/motions/x2_demo_bank.pkl --skip-missing-sources
+#
+# Every ``clip_window`` below is pinned to a clip of the regenerated demo
+# bank (``gear_sonic_deploy/reference/example/*`` retargeted to X2, 50 fps,
+# ``_M`` = left/right mirror). Users with their own motion corpus can re-pin
+# the ``motion_key`` / ``start_frame`` / ``n_frames`` of any recipe, or add
+# recipes for the bins that have no demo-bank source (see "bins without a
+# demo-bank source" below).
+#
+# Design notes carried over from the private-corpus iterations (the clip
+# ids are gone, the lessons stay):
+#   - lean_fwd_* / lean_left_* / lean_right_* / torso_*: PURE SYNTHESIS via
+#     synthesize_waist_ramp. A scaled mocap apex (0.5x / 1.4x of one clip)
+#     pushed the large magnitudes outside the source distribution and SONIC
+#     under-tracked them; each magnitude now declares its own peak_deg.
+#     hip_pitch_share=0.30 reproduces the natural "deadlift hinge" (pelvis
+#     and torso lean together) instead of a wagging-top single-joint bend.
+#     Hard caps INSIDE op_synthesize_waist_ramp REJECT |peak_deg| above
+#     pitch=20 / roll=10 / yaw=40 at build time.
+#   - Walk sources must have LOW pelvis-yaw oscillation (<= ~55 deg per
+#     1 s window after de-trend): raw SMPL->X2 retargets of a whole walk
+#     cycle carry the pelvis swing and the policy reads it as a stand-in-
+#     place wobble instead of forward progress.
+#   - Step primitives must start AND end in a square-ish stance (knee
+#     asymmetry within a few degrees) or the runtime seam-blend into idle
+#     erases the stride. A one-stride excerpt of a continuous walk with
+#     mid-stride endpoints turns into "shake without stepping".
+#   - Magnitude derivatives (half / quarter step, 45 deg turn) use
+#     scale_magnitude on root XY + yaw (and joint deltas); left/right pairs
+#     use mirror_lr. Backward steps do NOT mirror from forward (heel-strike
+#     vs toe-off polarity differs) and need their own curated base.
+#   - A synthesized crouch (synthesize_crouch_ramp) was under-tracked so
+#     heavily it looked like a low lean; a real squat-from-stand mocap
+#     window (~110 deg knee bend, ~30 cm pelvis drop) survives policy
+#     under-tracking. crouch_small / crouch_large stay synthesized and are
+#     aliased to crouch_medium by the planner.
+#   - A synthesized side step (synthesize_side_step_ramp) lacked the
+#     implicit weight transfer of real side-stepping; the policy stood
+#     still or fell. Side steps need a mocap base.
+#
+# Bins without a demo-bank source (no recipe here; the bin taxonomy in
+# x2_planner_bins.yaml still lists them and the runtime tolerates their
+# absence):
+#   - back_walk_standard, back_step_half_ft, back_step_quarter_ft: the demo
+#     bank has no backward walk.
+#   - side_right_step, side_left_step: the demo bank has no lateral step.
+#   To add them, pin a clip_window of your own corpus (a planted-endpoint
+#   window, 1.6 s for a step, 6 s for a loop) + ``freeze: [arms, head]``
+#   and derive the mirror / half / quarter variants as the recipes below do.
+#
+# Layering:
+#   - Static synth bins (torso left/right yaw, leans): waist ramps from
+#     DEFAULT_STAND_POSE.
+#   - Locomotion BASES (forward walk / step, left turns): clip_window into
+#     the demo-bank clip + freeze arms+head to neutral so the planner does
+#     not fight the VLA's / teleop arm output.
+#   - DERIVED bins: magnitude variants -> scale_magnitude; right-side
+#     variants of left turns / leans -> mirror_lr.
+
+primitives:
+
+  # =====================================================================
+  # IDLE -- always-on rest loop. A static hold of the trained stand pose
+  # (synthesize_waist_ramp with peak 0 = DEFAULT_STAND_POSE for every
+  # frame), 1.5 s @ 50 fps. Every other bin freezes arms+head to the same
+  # pose, so the handover seam is a small, constant delta instead of a
+  # wrist snap. Mocap idles carry unnatural wrist / shoulder values and
+  # the demo bank has no dedicated idle clip; the standing lead-in of
+  # walking_quip_360_R_002__A428 [0, 45] is the mocap alternative.
+  # =====================================================================
+
+  - bin_name: idle_stand
+    family: idle
+    notes: "synth: static hold of DEFAULT_STAND_POSE, 75f @ 50 fps"
+    ops:
+      - synthesize_waist_ramp:
+          axis: pitch
+          peak_deg: 0.0
+          ramp_in_frames: 0
+          hold_frames: 75
+          ramp_out_frames: 0
+      - freeze:
+          groups: [arms, head]
+
+  # =====================================================================
+  # CONTINUOUS WALK
+  # =====================================================================
+
+  - bin_name: fwd_walk_standard
+    family: continuous_walk
+    notes: |
+      Demo-bank source: walking_quip_360_R_002__A428 (straight walk-in
+      before the spin; 50 fps). Window [90, 150] = 1.2 s, body-frame
+      dx=+0.77 m, dy=-0.01 m, dyaw +3 deg, yaw_osc < 1 deg, knee
+      asymmetry 7/7 deg at the endpoints (same gait phase, loops).
+    ops:
+      - clip_window:
+          motion_key: walking_quip_360_R_002__A428
+          start_frame: 90
+          n_frames: 60
+      - freeze:
+          groups: [arms, head]
+
+  # =====================================================================
+  # LOCOMOTION -- forward shuffle (1ft base, halves derived).
+  #
+  # Base: a one-stride window of the same walk-in that powers
+  # fwd_walk_standard, picked between strides on BOTH sides so the
+  # seam-blend into idle does not erase the stride. Base displacement
+  # +45 cm in 0.8 s; the halves derived via scale_magnitude on root XY
+  # (and joint deltas) become ~22 cm and ~11 cm, both above the policy
+  # noise floor.
+  # =====================================================================
+
+  - bin_name: fwd_step_1ft
+    family: locomotion
+    notes: |
+      Demo-bank source: walking_quip_360_R_002__A428 frames [90, 130]
+      (0.8 s @ 50 fps, body-frame dx=+0.45 m, dy=-0.05 m, dyaw +2 deg).
+      Knee asymmetry 7/8 deg at start/end (square-ish stance both sides).
+    ops:
+      - clip_window:
+          motion_key: walking_quip_360_R_002__A428
+          start_frame: 90
+          n_frames: 40
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: fwd_step_half_ft
+    family: locomotion
+    notes: "derived: 0.5 * fwd_step_1ft"
+    derive_from: fwd_step_1ft
+    ops:
+      - scale_magnitude:
+          factor: 0.5
+
+  - bin_name: fwd_step_quarter_ft
+    family: locomotion
+    notes: "derived: 0.25 * fwd_step_1ft"
+    derive_from: fwd_step_1ft
+    ops:
+      - scale_magnitude:
+          factor: 0.25
+
+  # =====================================================================
+  # LOCOMOTION -- pivot turns LEFT (bases). The demo bank has no
+  # dedicated turn-in-place clip; the quarter-turn hops of the macarena
+  # (mirrored clip = counter-clockwise) are the cleanest low-translation
+  # yaw changes it contains. turn_left_45deg is derived from the 90 deg
+  # base via scale_magnitude (yaw + joint deltas halved).
+  # =====================================================================
+
+  - bin_name: turn_left_15deg
+    family: locomotion
+    notes: |
+      Demo-bank source: macarena_001__A545_M frames [780, 825] (0.9 s @
+      50 fps): dyaw +20 deg, no overshoot, body-frame dx=0.00 m,
+      dy=+0.09 m, knee asymmetry 8/7 deg at the endpoints.
+    ops:
+      - clip_window:
+          motion_key: macarena_001__A545_M
+          start_frame: 780
+          n_frames: 45
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: turn_left_30deg
+    family: locomotion
+    notes: |
+      Demo-bank source: macarena_001__A545_M frames [720, 765] (0.9 s @
+      50 fps): dyaw +27 deg, no overshoot, body-frame dx=-0.02 m,
+      dy=+0.03 m, knee asymmetry 13/7 deg at the endpoints.
+    ops:
+      - clip_window:
+          motion_key: macarena_001__A545_M
+          start_frame: 720
+          n_frames: 45
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: turn_left_45deg
+    family: locomotion
+    notes: "derived: 0.5 * turn_left_90deg (yaw, root XY and joint deltas)"
+    derive_from: turn_left_90deg
+    ops:
+      - scale_magnitude:
+          factor: 0.5
+
+  - bin_name: turn_left_90deg
+    family: locomotion
+    notes: |
+      Demo-bank source: macarena_001__A545_M frames [550, 665] (2.3 s @
+      50 fps): the quarter-turn hop, dyaw +87 deg, no overshoot,
+      body-frame dx=-0.01 m, dy=-0.01 m, pelvis dips to 0.58 m mid-hop
+      and returns (0.71 -> 0.70 m).
+    ops:
+      - clip_window:
+          motion_key: macarena_001__A545_M
+          start_frame: 550
+          n_frames: 115
+      - freeze:
+          groups: [arms, head]
+
+  # =====================================================================
+  # LOCOMOTION -- pivot turns RIGHT (mirror of LEFT bases)
+  # =====================================================================
+
+  - bin_name: turn_right_15deg
+    family: locomotion
+    notes: "derived: mirror_lr(turn_left_15deg)"
+    derive_from: turn_left_15deg
+    ops:
+      - mirror_lr: {}
+
+  - bin_name: turn_right_30deg
+    family: locomotion
+    notes: "derived: mirror_lr(turn_left_30deg)"
+    derive_from: turn_left_30deg
+    ops:
+      - mirror_lr: {}
+
+  - bin_name: turn_right_45deg
+    family: locomotion
+    notes: "derived: mirror_lr(turn_left_45deg)"
+    derive_from: turn_left_45deg
+    ops:
+      - mirror_lr: {}
+
+  - bin_name: turn_right_90deg
+    family: locomotion
+    notes: "derived: mirror_lr(turn_left_90deg)"
+    derive_from: turn_left_90deg
+    ops:
+      - mirror_lr: {}
+
+  # =====================================================================
+  # STATIC UPPER BODY -- forward leans (SYNTH, v6).
+  #
+  # v6: replaced the v2 mocap base (a body-check mocap window)
+  # + scale_magnitude derivatives with pure synthesis. Each magnitude
+  # declares its own peak_deg explicitly (8 / 14 / 20) instead of
+  # scaling a single mocap apex up/down -- the v2 1.4x derivative on
+  # lean_fwd_large was outside the source clip's distribution and
+  # SONIC under-tracked it.
+  #
+  # The synth uses hip_pitch_share=0.30 to reproduce the v2 mocap's
+  # "real pelvis pitch + waist pitch" deadlift-hinge shape: at 20 deg
+  # waist pitch the hips also flex by 6 deg, so the pelvis tips 6 deg
+  # forward, total torso-in-world ~26 deg. CG at hip height shifts ~12
+  # cm forward -- right at the foot half-length boundary, which is
+  # exactly where the cap was set. ankle_pitch_share=0.0 because at
+  # these angles the feet stay flat without explicit counter-rotation.
+  #
+  # Recipe ends back at idle (full trapezoid 0 -> peak -> 0), so the
+  # runtime can blend in at any phase and the robot returns to stand
+  # cleanly when the next idle command arrives.
+  # =====================================================================
+
+  - bin_name: lean_fwd_small
+    family: static_upper_body
+    notes: |
+      synth: waist_pitch ramp 0->+8deg->0 with hip_pitch_share=0.30.
+      Apex hip flex +2.4 deg, pelvis tilts ~2 deg forward, torso
+      ~10 deg in world. Conservative reach extension with negligible
+      CG shift -- safe for any payload.
+    ops:
+      - synthesize_waist_ramp:
+          axis: pitch
+          peak_deg: 8.0
+          ramp_in_frames: 30
+          hold_frames: 20
+          ramp_out_frames: 30
+          hip_pitch_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: lean_fwd_medium
+    family: static_upper_body
+    notes: |
+      synth: waist_pitch ramp 0->+14deg->0 with hip_pitch_share=0.30.
+      Apex hip flex +4.2 deg, pelvis tilts ~4 deg forward, torso
+      ~18 deg in world. Comparable to the v2 mocap apex (21.6 deg
+      total fwd pitch) but with explicit reproducible geometry.
+    ops:
+      - synthesize_waist_ramp:
+          axis: pitch
+          peak_deg: 14.0
+          ramp_in_frames: 30
+          hold_frames: 20
+          ramp_out_frames: 30
+          hip_pitch_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: lean_fwd_large
+    family: static_upper_body
+    notes: |
+      synth: waist_pitch ramp 0->+20deg->0 (AT CAP) with
+      hip_pitch_share=0.30. Apex hip flex +6 deg, pelvis tilts ~6 deg
+      forward, torso ~26 deg in world. CG at hip height ~12 cm
+      forward -- right at the foot half-length boundary. Anything
+      beyond this needs a stepping recovery (use fwd_step_1ft +
+      lean_fwd_medium chain instead).
+    ops:
+      - synthesize_waist_ramp:
+          axis: pitch
+          peak_deg: 20.0
+          ramp_in_frames: 30
+          hold_frames: 20
+          ramp_out_frames: 30
+          hip_pitch_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  # =====================================================================
+  # STATIC UPPER BODY -- lateral leans (SYNTH, v6 NEW).
+  #
+  # New family for sideways reach without a step. Pure waist_roll
+  # synthesis from stand pose; ankle_roll counter is OFF for now (the
+  # cap of 10 deg is conservative enough that SONIC should keep the
+  # feet planted via residual control).
+  #
+  # Foot half-WIDTH on the X2 is only ~5 cm, so the support polygon is
+  # much tighter laterally than sagittally. The cap of 10 deg
+  # corresponds to a ~10 cm CG shift at hip height -- already at the
+  # edge of the support polygon for a payload-laden upper body. Do
+  # NOT bump this without deploy evidence the policy can keep the
+  # contralateral foot on the ground.
+  #
+  # Right side derives via mirror_lr, which negates waist_roll and
+  # any anti-symmetric joint shares; the cap is enforced on the LEFT
+  # recipe's |peak_deg|, so the mirrored counterpart inherits the same
+  # bounded magnitude.
+  # =====================================================================
+
+  - bin_name: lean_left_small
+    family: static_upper_body
+    notes: |
+      synth: waist_roll ramp 0->+4deg->0 (lean LEFT). Apex CG shift
+      ~4 cm laterally at hip height; well within the support polygon.
+    ops:
+      - synthesize_waist_ramp:
+          axis: roll
+          peak_deg: 4.0
+          ramp_in_frames: 30
+          hold_frames: 20
+          ramp_out_frames: 30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: lean_left_medium
+    family: static_upper_body
+    notes: |
+      synth: waist_roll ramp 0->+7deg->0. Apex CG shift ~7 cm
+      laterally at hip height; mid-range lateral reach.
+    ops:
+      - synthesize_waist_ramp:
+          axis: roll
+          peak_deg: 7.0
+          ramp_in_frames: 30
+          hold_frames: 20
+          ramp_out_frames: 30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: lean_left_large
+    family: static_upper_body
+    notes: |
+      synth: waist_roll ramp 0->+10deg->0 (AT CAP). Apex CG shift
+      ~10 cm laterally at hip height -- right at the foot half-WIDTH.
+      Beyond this the contralateral foot will lift; use a side_step
+      primitive instead for further lateral motion.
+    ops:
+      - synthesize_waist_ramp:
+          axis: roll
+          peak_deg: 10.0
+          ramp_in_frames: 30
+          hold_frames: 20
+          ramp_out_frames: 30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: lean_right_small
+    family: static_upper_body
+    notes: "derived: mirror_lr(lean_left_small) -> waist_roll -4deg"
+    derive_from: lean_left_small
+    ops:
+      - mirror_lr: {}
+
+  - bin_name: lean_right_medium
+    family: static_upper_body
+    notes: "derived: mirror_lr(lean_left_medium) -> waist_roll -7deg"
+    derive_from: lean_left_medium
+    ops:
+      - mirror_lr: {}
+
+  - bin_name: lean_right_large
+    family: static_upper_body
+    notes: "derived: mirror_lr(lean_left_large) -> waist_roll -10deg"
+    derive_from: lean_left_large
+    ops:
+      - mirror_lr: {}
+
+  # =====================================================================
+  # STATIC UPPER BODY -- crouch family.
+  #
+  # v5 (2026-05-13, gallery-validation): replaced the v4 synthesized
+  # crouch_medium with a real squat-from-stand mocap window. Even with
+  # the v5 ZMQ future-window deploy fix in place, the synthesized
+  # ``synthesize_crouch_ramp`` references (3 / 6 / 10 cm pelvis drop,
+  # 70-96 deg added knee bend) were under-tracked so heavily that the
+  # robot looked like it was doing a "low lean" instead of a squat
+  # (user observation 2026-05-13). The mocap source has ~110 deg added
+  # knee bend at apex and a ~34 cm pelvis drop -- a much stronger
+  # reference signal that survives policy under-tracking.
+  #
+  # Source: a self-contained stand -> squat -> stand cycle from the demo
+  # bank (squat_001__A359, see the crouch_medium recipe) with square-
+  # stance endpoints.
+  #
+  # crouch_small / crouch_large are kept as the v4 synthesized
+  # primitives but are NOT REACHABLE via the planner anymore: every
+  # ``crouch`` magnitude is aliased to ``crouch_medium`` in
+  # ``LocomotionCommand.as_bin_name`` (same pattern as fwd_step /
+  # side_left_step / side_right_step). Once we have proven mocap
+  # candidates for shallower / deeper variants, undo the alias.
+  #
+  # All three are arms+head frozen so VLA / teleop arm output is not
+  # fought by the planner. The mocap source's hip_pitch and waist_pitch
+  # at apex (~95 deg hip flex, ~16 deg waist pitch) are intentionally
+  # KEPT -- a real squat needs forward CG shift, and freezing them to
+  # stand baseline would tip the robot backward.
+  # =====================================================================
+
+  - bin_name: crouch_small
+    family: static_upper_body
+    notes: |
+      v4 synthesized: 3 cm pelvis drop. UNREACHABLE via planner --
+      crouch+small is aliased to crouch_medium (mocap squat). Kept in
+      the build so existing test fixtures and the curator inventory
+      continue to resolve.
+    ops:
+      - synthesize_crouch_ramp:
+          peak_drop_m: 0.03
+          ramp_in_frames: 25
+          hold_frames: 15
+          ramp_out_frames: 25
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: crouch_medium
+    family: static_upper_body
+    notes: |
+      Demo-bank source: squat_001__A359 frames [0, 125] (2.5 s @ 50 fps),
+      a self-contained stand -> squat -> stand cycle: pelvis 0.68 m ->
+      0.26 m at the apex (frame ~50) -> 0.68 m, body-frame drift under
+      15 cm, dyaw -5 deg, square stance at both endpoints. The source's
+      hip_pitch and waist_pitch at the apex are KEPT (a real squat needs
+      the forward CG shift; freezing them to stand baseline tips the
+      robot backward).
+    ops:
+      - clip_window:
+          motion_key: squat_001__A359
+          start_frame: 0
+          n_frames: 125
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: crouch_large
+    family: static_upper_body
+    notes: |
+      v4 synthesized: 10 cm pelvis drop. UNREACHABLE via planner --
+      crouch+large is aliased to crouch_medium (mocap squat). Kept in
+      the build so existing test fixtures and the curator inventory
+      continue to resolve.
+    ops:
+      - synthesize_crouch_ramp:
+          peak_drop_m: 0.10
+          ramp_in_frames: 25
+          hold_frames: 15
+          ramp_out_frames: 25
+      - freeze:
+          groups: [arms, head]
+
+  # =====================================================================
+  # STATIC UPPER BODY -- torso twists LEFT (synth bases, v6).
+  # Slightly shorter ramps (25 frames) than leans because yaw moves are
+  # natural at a quicker pace. Kept synth: corpus has no clean
+  # waist-yaw-only motions (curator scored 0.0 across the board).
+  #
+  # v6: added hip_yaw_share=0.30 so the synthesized twist co-actuates
+  # both hips in the same world rotation direction as the waist (LEFT
+  # hip_yaw +share*track, RIGHT hip_yaw -share*track -- the anti-
+  # symmetric pattern hip_yaw needs to produce a parallel pelvis
+  # rotation; see op_synthesize_waist_ramp). Visually: the pelvis
+  # shares ~30% of the upper-body twist instead of the prior periscope-
+  # on-frozen-base look. Mirror_lr handles the right side correctly
+  # because hip_yaw is in _POST_SWAP_NEGATE_INDICES.
+  #
+  # v6: torso_left_45deg / torso_right_45deg renamed to *_40deg with
+  # peak_deg=40 (was 45). Matches the new op-level yaw cap of 40 deg.
+  # The runtime LocomotionCommand maps deg_40 -> "40deg" suffix; old
+  # callers using deg_45 against torso_* will warn-and-fallthrough to
+  # idle (no crash) and need updating to deg_40.
+  # =====================================================================
+
+  - bin_name: torso_left_15deg
+    family: static_upper_body
+    notes: "synth: waist_yaw ramp 0->+15deg->0 with hip_yaw_share=0.30"
+    ops:
+      - synthesize_waist_ramp:
+          axis: yaw
+          peak_deg: 15.0
+          ramp_in_frames: 25
+          hold_frames: 20
+          ramp_out_frames: 25
+          hip_yaw_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: torso_left_30deg
+    family: static_upper_body
+    notes: "synth: waist_yaw ramp 0->+30deg->0 with hip_yaw_share=0.30"
+    ops:
+      - synthesize_waist_ramp:
+          axis: yaw
+          peak_deg: 30.0
+          ramp_in_frames: 25
+          hold_frames: 20
+          ramp_out_frames: 25
+          hip_yaw_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: torso_left_40deg
+    family: static_upper_body
+    notes: |
+      synth: waist_yaw ramp 0->+40deg->0 (AT CAP) with
+      hip_yaw_share=0.30. Apex hip_yaw ~12 deg parallel rotation, so
+      the pelvis follows ~12 deg and the upper body sees ~52 deg
+      world-frame rotation about Z. Replaces v5 torso_left_45deg
+      (peak_deg=45) which now exceeds the op-level yaw cap.
+    ops:
+      - synthesize_waist_ramp:
+          axis: yaw
+          peak_deg: 40.0
+          ramp_in_frames: 25
+          hold_frames: 20
+          ramp_out_frames: 25
+          hip_yaw_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  # =====================================================================
+  # STATIC UPPER BODY -- torso twists RIGHT.
+  #
+  # NOTE: standalone synth recipes (NOT derive_from + mirror_lr) because
+  # the chosen hip_yaw_share pattern (LEFT=+share*track, RIGHT=-share
+  # *track at the joint) is INVARIANT under mirror_lr's swap+negate on
+  # _POST_SWAP_NEGATE_INDICES. Going through mirror would flip waist_yaw
+  # but leave the hip_yaw deltas unchanged -- the pelvis would try to
+  # follow a LEFT twist while the upper body twists RIGHT, an inconsistent
+  # pose.
+  #
+  # Standalone synth with negative peak_deg flows the sign through
+  # waist_track, so BOTH waist_yaw AND the hip_yaw_share effects flip
+  # together. Same source op as the LEFT counterparts, so the cap +
+  # share-validation logic exercises both directions identically.
+  # =====================================================================
+
+  - bin_name: torso_right_15deg
+    family: static_upper_body
+    notes: "synth: waist_yaw ramp 0->-15deg->0 with hip_yaw_share=0.30"
+    ops:
+      - synthesize_waist_ramp:
+          axis: yaw
+          peak_deg: -15.0
+          ramp_in_frames: 25
+          hold_frames: 20
+          ramp_out_frames: 25
+          hip_yaw_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: torso_right_30deg
+    family: static_upper_body
+    notes: "synth: waist_yaw ramp 0->-30deg->0 with hip_yaw_share=0.30"
+    ops:
+      - synthesize_waist_ramp:
+          axis: yaw
+          peak_deg: -30.0
+          ramp_in_frames: 25
+          hold_frames: 20
+          ramp_out_frames: 25
+          hip_yaw_share: 0.30
+      - freeze:
+          groups: [arms, head]
+
+  - bin_name: torso_right_40deg
+    family: static_upper_body
+    notes: |
+      synth: waist_yaw ramp 0->-40deg->0 (AT CAP) with hip_yaw_share=0.30.
+      Mirror counterpart of torso_left_40deg; standalone synth (not
+      mirror_lr-derived) -- see comment block above.
+    ops:
+      - synthesize_waist_ramp:
+          axis: yaw
+          peak_deg: -40.0
+          ramp_in_frames: 25
+          hold_frames: 20
+          ramp_out_frames: 25
+          hip_yaw_share: 0.30
+      - freeze:
+          groups: [arms, head]

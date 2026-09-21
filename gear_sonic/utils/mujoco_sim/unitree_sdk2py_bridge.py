@@ -127,6 +127,25 @@ class UnitreeSdk2Bridge:
         }
         self.joystick = None
 
+        # Optional ground-truth pelvis pose ZMQ PUB (topic 'robot_pose', mirrors
+        # the X2 sim bridge). DDS/lowstate expose IMU orientation but host-side
+        # motion-capture / recording tools need the world
+        # XY + heading, which lives in obs['floating_base_pose']. Opt-in via
+        # config['ROBOT_POSE_ZMQ_PORT'] or env GEAR_SONIC_ROBOT_POSE_ZMQ_PORT;
+        # 0/unset = disabled (no behavior change).
+        import os as _os
+        self._robot_pose_port = int(
+            config.get("ROBOT_POSE_ZMQ_PORT",
+                       _os.environ.get("GEAR_SONIC_ROBOT_POSE_ZMQ_PORT", 0)))
+        self._robot_pose_pub = None
+        if self._robot_pose_port > 0:
+            import zmq
+            from gear_sonic.utils.teleop.zmq.robot_pose_zmq import pack_robot_pose
+            self._pack_robot_pose = pack_robot_pose
+            self._robot_pose_pub = zmq.Context.instance().socket(zmq.PUB)
+            self._robot_pose_pub.bind(f"tcp://*:{self._robot_pose_port}")
+            print(f"[UnitreeSdk2Bridge] robot_pose PUB bound tcp://*:{self._robot_pose_port}")
+
         self.reset()
 
     def reset(self):
@@ -204,6 +223,14 @@ class UnitreeSdk2Bridge:
 
         self.odo_state.tick = int(obs["time"] * 1e3)
         self.odo_state_puber.Write(self.odo_state)
+
+        # Ground-truth pelvis pose for host-side capture (opt-in). floating_base_pose
+        # is [x, y, z, qw, qx, qy, qz] = the MuJoCo free-joint qpos slice.
+        if self._robot_pose_pub is not None:
+            fbp = obs["floating_base_pose"]
+            self._robot_pose_pub.send(
+                self._pack_robot_pose(float(obs["time"]),
+                                      [float(v) for v in fbp[:7]]))
 
         self.torso_imu_puber.Write(self.torso_imu_state)
 

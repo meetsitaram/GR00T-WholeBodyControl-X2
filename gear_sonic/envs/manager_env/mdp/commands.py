@@ -612,8 +612,9 @@ class TrackingCommand(CommandTerm):
 
         # Inject body/DOF mapping into motion_lib_cfg so motion_lib handles
         # body reordering and xyzw→wxyz quaternion conversion at load time.
-
-        isaaclab_to_mujoco_mapping = order_converter.G1Converter().get_isaaclab_to_mujoco_mapping()
+        asset_file = motion_lib_cfg.get("asset", {}).get("assetFileName", "g1_29dof_rev_1_0.xml")
+        converter = order_converter.get_converter_for_mjcf(asset_file)
+        isaaclab_to_mujoco_mapping = converter.get_isaaclab_to_mujoco_mapping()
         motion_lib_cfg.update(
             {
                 "mujoco_to_isaaclab_body": isaaclab_to_mujoco_mapping["mujoco_to_isaaclab_body"],
@@ -2393,6 +2394,59 @@ class TrackingCommand(CommandTerm):
     def episode_encoder_index(self) -> torch.Tensor:
         return self.encoder_index
 
+    def _update_corpus_accounting_metrics(self):
+        """Corpus / sidecar / encoder / fine-tune ACCOUNTING as logged metrics (operator 2026-09-16).
+
+        Why: a run trained for hours with `encoder_sample_probs.smpl=1.0` while no SMPL sidecar
+        corpus was staged (every clip fell back to g1), and another ran g1-only by config -- nothing
+        on wandb showed either. These constants ride the standard ``Metrics/<term>/<key>`` path as
+        per-env tensors (mean over envs = the value; the *_share keys are per-env flags whose mean
+        is the realised share at reset). Defensive: never raises into the training step.
+        """
+        try:
+            ml = self.motion_lib
+            ne, dev = self.num_envs, self.device
+
+            def const(v):
+                return torch.full((ne,), float(v), device=dev)
+
+            self.metrics["acct_corpus_num_clips"] = const(getattr(ml, "_num_unique_motions", 0) or 0)
+            if not hasattr(self, "_acct_smpl_sidecar_clips"):
+                sd = getattr(ml, "smpl_data", None)
+                self._acct_smpl_sidecar_clips = (
+                    sum(1 for x in sd if x is not None) if isinstance(sd, list) else 0
+                )
+            self.metrics["acct_smpl_sidecar_clips"] = const(self._acct_smpl_sidecar_clips)
+            n_tot = float(getattr(ml, "_num_unique_motions", 0) or 0)
+            self.metrics["acct_smpl_sidecar_frac"] = const(
+                self._acct_smpl_sidecar_clips / n_tot if n_tot > 0 else 0.0
+            )
+            has = getattr(ml, "motion_has_smpl", None)
+            if has is not None:
+                self.metrics["acct_smpl_resident_frac"] = const(has.float().mean().item())
+            probs = self.encoder_sample_probs_dict or {}
+            for name in ("g1", "smpl", "teleop"):
+                self.metrics[f"acct_enc_prob_{name}"] = const(probs.get(name, 0.0))
+            ei = getattr(self, "encoder_index", None)
+            if ei is not None:
+                for name, col in (("g1", self.g1_encoder_index), ("smpl", self.smpl_encoder_index), ("teleop", self.teleop_encoder_index)):
+                    if col is not None and col < ei.shape[1]:
+                        self.metrics[f"acct_enc_share_{name}"] = ei[:, col].float()
+            ft = (ml.m_cfg.get("fine_tune_dataset", None) or {}) if hasattr(ml, "m_cfg") else {}
+            n_pin = int(getattr(ml, "_pin_motion_idxes", torch.zeros(0)).numel()) if ft.get("enable", False) else 0
+            n_res = int(getattr(ml, "_n_loaded_finetune", 0) or 0)
+            self.metrics["acct_ft_enabled"] = const(1.0 if ft.get("enable", False) else 0.0)
+            self.metrics["acct_ft_pinned_clips"] = const(n_pin)
+            self.metrics["acct_ft_resident_clips"] = const(n_res)
+            self.metrics["acct_ft_rate_cfg"] = const(ft.get("finetune_sample_rate", 0.0) or 0.0)
+            self.metrics["acct_ft_exclusive_route"] = const(1.0 if ft.get("exclusive_route", False) else 0.0)
+            # pinned clips occupy the first n_res batch-local ids by construction (motion_lib_base)
+            self.metrics["acct_ft_share_realised"] = (self.motion_ids < n_res).float() if n_res > 0 else const(0.0)
+        except Exception as _e:  # noqa: BLE001
+            if not getattr(self, "_acct_warned", False):
+                self._acct_warned = True
+                print(f"[commands] accounting metrics disabled: {_e}")  # noqa: T201
+
     def _update_metrics(self):
         """Compute tracking error metrics between reference motion and robot state.
 
@@ -2444,6 +2498,8 @@ class TrackingCommand(CommandTerm):
             self.metrics["error_joint_vel"] = torch.abs(self.joint_vel - self.robot_joint_vel).mean(
                 dim=-1
             )
+
+        self._update_corpus_accounting_metrics()
 
     def resample_all_commands(self):
         """Resample motion clips and reset state for all environments at once."""
@@ -2896,6 +2952,38 @@ class TrackingCommand(CommandTerm):
                 self.motion_start_time_steps[env_ids] = sampled_times
 
             if self.encoder_sample_probs is not None:
+                if not getattr(self, "_smpl_coverage_checked", False):
+                    # One-time guard: a configured smpl encoder with zero SMPL
+                    # coverage (smpl_motion_file dummy/missing, or key mismatch
+                    # between corpus and sidecar names) silently routes every
+                    # env to the no-smpl fallback — the encoder trains 0
+                    # gradients and W&B shows flat-0 smpl losses with no error.
+                    self._smpl_coverage_checked = True
+                    smpl_prob = float(self.encoder_sample_probs_dict.get("smpl", 0.0))
+                    n_smpl = int(self.motion_lib.motion_has_smpl.sum().item())
+                    n_total = int(self.motion_lib.motion_has_smpl.numel())
+                    if smpl_prob > 0.0:
+                        if n_smpl == 0:
+                            import warnings
+
+                            banner = "!" * 78
+                            warnings.warn(
+                                f"\n{banner}\n"
+                                "SMPL encoder has sample prob "
+                                f"{smpl_prob} but 0/{n_total} motions have SMPL "
+                                "data. The smpl encoder will NEVER be sampled and "
+                                "trains with zero gradient (silent dead params). "
+                                "Check motion_lib_cfg.smpl_motion_file (is it "
+                                "'dummy'?) and that sidecar pkl basenames match "
+                                f"the corpus motion keys.\n{banner}",
+                                RuntimeWarning,
+                                stacklevel=2,
+                            )
+                        else:
+                            print(  # noqa: T201
+                                f"[commands] SMPL coverage: {n_smpl}/{n_total} "
+                                "motions have SMPL sidecar data"
+                            )
                 has_smpl = self.motion_lib.motion_has_smpl[self.motion_ids[env_ids]]
                 if self.soma_encoder_index is not None and hasattr(
                     self.motion_lib, "motion_has_soma"

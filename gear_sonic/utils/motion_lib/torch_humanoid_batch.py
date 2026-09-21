@@ -196,18 +196,18 @@ class Humanoid_Batch:
             and tree.getroot().find("worldbody").findall(".//joint")[0].attrib["type"] == "free"
         ):
             for j in tree.getroot().find("worldbody").findall(".//joint")[1:]:
-                self.dof_axis.append([int(i) for i in j.attrib["axis"].split(" ")])
+                self.dof_axis.append([float(i) for i in j.attrib["axis"].split(" ")])  # float: canted (non-unit-basis) axes are valid
             self.has_freejoint = True
         elif "type" not in tree.getroot().find("worldbody").findall(".//joint")[0].attrib:
             for j in tree.getroot().find("worldbody").findall(".//joint"):
-                self.dof_axis.append([int(i) for i in j.attrib["axis"].split(" ")])
+                self.dof_axis.append([float(i) for i in j.attrib["axis"].split(" ")])  # float: canted (non-unit-basis) axes are valid
             self.has_freejoint = True
         else:
             for j in tree.getroot().find("worldbody").findall(".//joint")[6:]:
-                self.dof_axis.append([int(i) for i in j.attrib["axis"].split(" ")])
+                self.dof_axis.append([float(i) for i in j.attrib["axis"].split(" ")])  # float: canted (non-unit-basis) axes are valid
             self.has_freejoint = False
 
-        self.dof_axis = torch.tensor(self.dof_axis)
+        self.dof_axis = torch.tensor(self.dof_axis, dtype=torch.float32)
 
         for extend_config in cfg.extend_config:
             self.body_names_augment += [extend_config.joint_name]

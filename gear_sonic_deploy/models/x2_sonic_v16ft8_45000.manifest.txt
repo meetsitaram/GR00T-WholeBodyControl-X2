@@ -1,0 +1,12 @@
+# x2_sonic_v16ft8_45000 exported 2026-09-17T12:05:21Z from model_step_045000.pt (md5 52d8ca591e34a6a15f140c22aab957b8) at 531c906
+# shipped set: gear_sonic_deploy/models/ (the _smpl.onnx gate-only graph and the .pt are not shipped; re-export with gear_sonic/scripts/export_native_all.sh)
+09d7b6971ee74617522603feb84662ce  x2_sonic_v16ft8_45000_dual.onnx
+dae6b74a8d109cec726718ab5e1f6c6b  x2_sonic_v16ft8_45000_g1.onnx
+a7a82d3e3e17edcc11b00ebc0f3f0728  x2_sonic_v16ft8_45000_g1_token.onnx
+31f8c4a7ec767801066821a4dcd3a9ba  x2_sonic_v16ft8_45000_smpl.onnx
+e7fec5210ee063ff62fcdacfa54b84fa  x2_sonic_v16ft8_45000_smpl_tokenizer.onnx
+x2_sonic_v16ft8_45000_dual.onnx          md5 09d7b697  obs  2511  native_dual_head       from model_step_045000.pt  fp native-3enc:52d8ca591e34a6a15f140c22aab957b8 ori=full exported 2026-09-17T12:05:18Z
+x2_sonic_v16ft8_45000_g1.onnx            md5 dae6b74a  obs  1670  pose-graph             from model_step_045000.pt  fp native-3enc:52d8ca591e34a6a15f140c22aab957b8 exported 2026-09-17T12:05:12Z
+x2_sonic_v16ft8_45000_g1_token.onnx      md5 a7a82d3e  obs  1670  any2any_token_deploy   from model_step_045000.pt  fp native-3enc:52d8ca591e34a6a15f140c22aab957b8 exported 2026-09-17T12:05:12Z
+x2_sonic_v16ft8_45000_smpl.onnx          md5 31f8c4a7  obs  1830  pose-graph             from UNSTAMPED  fp -   (not shipped)
+x2_sonic_v16ft8_45000_smpl_tokenizer.onnx md5 e7fec521  obs   840  smpl_tokenizer         from model_step_045000.pt  fp native-3enc:52d8ca591e34a6a15f140c22aab957b8 ori=full exported 2026-09-17T12:05:12Z

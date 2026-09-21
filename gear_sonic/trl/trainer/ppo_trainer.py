@@ -2204,6 +2204,14 @@ class TRLPPOTrainer(PPOTrainer):  # noqa: F405
 
         if resume:
             # Load optimizer state
+            # KNOWN BUG (2026-08-15, unresolved): with a partially-frozen
+            # policy (LoRA adapters — frozen-core T2), restoring optimizer state
+            # here silently kills the adapters' gradients: step counters
+            # advance and losses stay healthy, but the trainable params never
+            # move. Reproduced locally (60-iter probes: +resume freezes LoRA,
+            # +checkpoint-only trains). Until root-caused, warm-start such
+            # runs with +checkpoint only, and verify liveness from saved
+            # weight deltas, never from logs.
             if (
                 "optimizer_state_dict" in checkpoint
                 and checkpoint["optimizer_state_dict"] is not None
@@ -2241,7 +2249,10 @@ class TRLPPOTrainer(PPOTrainer):  # noqa: F405
                     ]:
                         setattr(self.state, key, value)
 
-        print(f"Loaded checkpoint from step {checkpoint['state'].global_step}")  # noqa: T201
+        # weights-only warm starts (e.g. make_g1_lora_warmstart.py) carry no
+        # trainer state — report step 0 instead of crashing all 8 ranks
+        _st = checkpoint.get("state")
+        print(f"Loaded checkpoint from step {getattr(_st, 'global_step', 0)}")  # noqa: T201
         return checkpoint
 
     def eval(self):

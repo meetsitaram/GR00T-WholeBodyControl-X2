@@ -1,0 +1,138 @@
+# =============================================================================
+# Observation layout for the AgiBot X2 Ultra g1+g1_dyn fused ONNX policy.
+#
+# Source of truth: gear_sonic/scripts/eval_x2_mujoco.py + eval_x2_mujoco_onnx.py
+# Verified by /tmp/x2_step0_isaaclab.pt slice-by-slice match (Phase 0).
+#
+# This file documents what the C++ deploy harness MUST construct on every
+# control tick before invoking the ONNX session. It is machine-readable so a
+# future codegen pass can use it to drive the C++ obs builder; for now it is
+# documentation that mirrors the Python obs construction one-to-one.
+# =============================================================================
+
+robot:
+  name: x2_ultra
+  num_dofs: 31
+  joint_order: mujoco          # the MJCF/URDF kinematic-tree (BFS) order
+
+policy:
+  onnx_kind: fused_g1          # encoder + decoder + FSQ in a single graph
+  encoder_index: 0             # baked into the export (encoder_name="g1")
+  control_dt: 0.02             # 50 Hz
+  decimation: 4                # implicit-PD inner loop runs at 200 Hz
+  history_len: 10              # CircularBuffer depth for proprioception
+  num_future_frames: 10        # tokenizer reference-trajectory horizon
+  dt_future_ref: 0.1           # tokenizer reference frame spacing (s)
+
+actor_obs:
+  total_dim: 1670
+  layout: "[tokenizer(680) | proprioception(990)]"
+
+  # ---------------------------------------------------------------------------
+  # 990-D proprioception
+  # CRITICAL: term order follows the PolicyCfg dataclass attribute order
+  # (gear_sonic/envs/manager_env/mdp/observations.py lines 107-128), which is
+  # NOT the same as the YAML ordering. Do not alphabetize.
+  #
+  # Within each term: 10 history frames, oldest at index 0, newest at index 9.
+  # On reset / first sample, all 10 slots are broadcast-filled with the first
+  # observation (mirrors IsaacLab CircularBuffer.buffer semantics; without
+  # priming, frames 0..8 would be zero, which is OOD for any policy with
+  # history).
+  # ---------------------------------------------------------------------------
+  proprioception:
+    total_dim: 990
+    term_order:
+      - { name: base_ang_vel,   dim_per_frame: 3,  history_len: 10, total: 30,  joint_order: n/a, source: imu_torso.angular_velocity, frame: body }
+      - { name: joint_pos_rel,  dim_per_frame: 31, history_len: 10, total: 310, joint_order: il,  source: hardware_joint_state.position - DEFAULT_DOF }
+      - { name: joint_vel,      dim_per_frame: 31, history_len: 10, total: 310, joint_order: il,  source: hardware_joint_state.velocity }
+      - { name: last_action,    dim_per_frame: 31, history_len: 10, total: 310, joint_order: il,  source: previous_policy_action }
+      - { name: gravity_dir,    dim_per_frame: 3,  history_len: 10, total: 30,  joint_order: n/a, source: "quat_rotate_inverse(base_quat, [0,0,-1])" }
+
+  # ---------------------------------------------------------------------------
+  # 680-D tokenizer slice -- IsaacLab's "buggy temporal-axis reshape" layout.
+  # The PPO-trained policy expects this exact scramble; see
+  # gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/tokenizer_obs.hpp
+  # for the full bug history and rationale.
+  #
+  # Concretely, the encoder input is built as
+  #   command_multi_future_nonflat (N, 10, 62)  # buggy reshape, see below
+  #   motion_anchor_ori_b_mf_nonflat (N, 10, 6)
+  #   encoder_in = cat(.., dim=-1).reshape(-1)  # (680,) row-major
+  #
+  # where command_multi_future_nonflat is built by
+  # gear_sonic/envs/manager_env/mdp/observations.py:584-585 as
+  #   cat([joint_pos_multi_future, joint_vel_multi_future], dim=1)  # (N, 620)
+  #   .reshape(N, num_future_frames=10, -1)
+  #
+  # but the underlying buffer is [all_jpos(310) | all_jvel(310)], so the
+  # reshape produces row k of length 62 = (jpos pair) for k<5 and (jvel pair)
+  # for k>=5, NOT per-frame [jpos_fk, jvel_fk]. The deploy must reproduce
+  # this scramble bit-for-bit:
+  #
+  #   for k in 0..9 (each row = 68 floats, flattened row-major to 680):
+  #     k <  5:  bytes[k*68 ..   k*68+31)  = jpos_il at future-frame (2k)
+  #              bytes[k*68+31 .. k*68+62) = jpos_il at future-frame (2k+1)
+  #     k >= 5:  bytes[k*68 ..   k*68+31)  = jvel_il at future-frame (2*(k-5))
+  #              bytes[k*68+31 .. k*68+62) = jvel_il at future-frame (2*(k-5)+1)
+  #     bytes[k*68 + 62 .. k*68 + 68)      = rot6d(cur^-1 * future_k_root_quat)
+  #
+  # The 6D rotation rep is the row-major flatten of the first two COLUMNS of
+  # the rotation matrix, matching IsaacLab's `mat[..., :2].reshape(B, -1)`:
+  # [m00, m01, m10, m11, m20, m21]. See math_utils.hpp::rot6d_from_quat_xyzw
+  # for the rows-vs-columns bug history.
+  #
+  # Bug history: an earlier C++ revision used "true" per-frame interleaved
+  # rows [jpos_fk(31) | jvel_fk(31) | ori_fk(6)] because the bit-perfect
+  # ONNX re-export's `view(-1, 10, 68)` was misread as evidence that the
+  # input flat order was per-frame interleaved. In fact the input flat
+  # comes from IsaacLab's buggy reshape above. The mismatch made the
+  # parity sim fall after ~5 s of clean stand on the iter-4000 checkpoint
+  # while the Python eval (which faithfully reproduces the buggy reshape)
+  # held 30 s clean -- caught by the slot diff in
+  # gear_sonic_deploy/scripts/compare_deploy_vs_python_obs.py.
+  # ---------------------------------------------------------------------------
+  tokenizer:
+    total_dim: 680
+    onnx_layout: isaaclab_buggy_temporal_reshape
+    components:
+      - name: jpos
+        dim_per_frame: 31
+        num_frames: 10
+        layout_note: |
+          jpos data lives in rows 0..4 of the (10, 68) view. Row k has
+          jpos at future-frame (2k) in slots 0..30 and jpos at future-frame
+          (2k+1) in slots 31..61. Rows 5..9 contain jvel data instead.
+        joint_order: il
+        source: reference_motion at t + k * dt_future_ref
+      - name: jvel
+        dim_per_frame: 31
+        num_frames: 10
+        layout_note: |
+          jvel data lives in rows 5..9. Row k (k>=5) has jvel at future-
+          frame (2*(k-5)) in slots 0..30 and jvel at future-frame
+          (2*(k-5)+1) in slots 31..61.
+        joint_order: il
+        source: reference_motion at t + k * dt_future_ref
+      - name: orientation_6d_cols
+        dim_per_frame: 6
+        num_frames: 10
+        offset_within_frame: 62    # bytes [k*68 + 62 .. k*68 + 68)
+        source: rot6d_cols(cur^-1 * future_k_root_quat)
+        frame: relative_to_current_base_quat
+
+action:
+  dim: 31
+  joint_order: il
+  scale: action_scale[i] = 0.25 * effort_limit[i] / kp_train[i]
+  application: "target_q_mj[i] = DEFAULT_DOF[i] + (action_il[mj_to_il[i]]) * action_scale[i]"
+
+# ---------------------------------------------------------------------------
+# Joint mappings live in the autogenerated header, not duplicated here:
+#     gear_sonic_deploy/src/x2/agi_x2_deploy_onnx_ref/include/policy_parameters.hpp
+#         isaaclab_to_mujoco[31]   mujoco_to_isaaclab[31]
+#         kps[31]   kds[31]   x2_action_scale[31]   default_angles[31]
+#         mujoco_joint_names[31]
+# Regenerate via:
+#     python gear_sonic_deploy/scripts/codegen_x2_policy_parameters.py
+# ---------------------------------------------------------------------------

@@ -150,7 +150,7 @@ class clip_holder_G1(clip_holder):
             'allowed_pred_num_tokens': [1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
         },  # crawling
         "walk_boxing": {
-            "clip_id": "shadow_boxing_R_003__A360_M",
+            "clip_id": "macarena_001__A545",
             "start_frame": 25, "end_frame": 35, 'avg_root_vel': 1.0 * 2.0,
             'allowed_pred_num_tokens': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
         },

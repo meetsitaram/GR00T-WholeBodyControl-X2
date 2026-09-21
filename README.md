@@ -434,3 +434,11 @@ For the Decoupled WBC used in GR00T N1.5 and N1.6 models, please refer to the [D
 We would like to acknowledge the following projects from which parts of the code in this repo are derived from:
 - [Beyond Mimic](https://github.com/HybridRobotics/whole_body_tracking)
 - [Isaac Lab](https://github.com/isaac-sim/IsaacLab)
+
+## AgiBot X2 Ultra
+
+This fork adds the AgiBot X2 Ultra as a second embodiment: gamepad / Quest 3 / Pico whole-body
+teleop, motion and tape replay, a docker-backed MuJoCo sim of the real deploy binary, a PC2
+colcon deploy, and Nebius training for native and frozen-G1-core models.
+Start at [README_X2.md](README_X2.md) and the runbooks under [docs/x2/](docs/x2/README.md);
+a default model set ships (git-lfs), other models are bring-your-own, see [MODELS.md](MODELS.md).

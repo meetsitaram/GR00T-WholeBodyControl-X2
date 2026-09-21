@@ -1,0 +1,4 @@
+# AgiBot SDK content is fetched at setup time — never committed
+*
+!README.md
+!.gitignore

@@ -1,0 +1,70 @@
+# X2 Ultra actuator plant — AS IT STOOD BEFORE the vendor datasheet.
+#
+# FROZEN. Never edit. Its only purpose is to evaluate or re-export a checkpoint
+# trained BEFORE 2026-08-23 with the action scales it was actually trained with.
+#
+# Needed because action_scale = 0.25 * effort / (armature * w^2), so a
+# checkpoint evaluated under a different plant is silently mis-scaled — up to
+# 2.86x on waist_yaw. Any A/B across the vendor change must hold BOTH plants
+# live at once: the old model under this file, the new model under
+# x2_ultra_vendor_20260823.yaml.
+#
+# Provenance of these numbers: H2 motor constants used as estimates, carrying
+# the caveat "MUST be tuned once real motor datasheets are obtained". They were
+# wrong in two ways — waist_yaw had its own value despite being the same PF90
+# motor as hip/knee, and ankle/shoulder each lumped two motor families under
+# one constant.
+name: legacy_pre20260823
+natural_freq_hz: 10.0
+damping_ratio: 2.0
+
+armature:
+  hip: 0.025101925
+  knee: 0.025101925
+  waist_yaw: 0.010177520
+  waist_pitch: 0.003609725
+  waist_roll: 0.003609725
+  ankle_pitch: 0.003609725
+  ankle_roll: 0.003609725
+  shoulder_pitch: 0.003609725
+  shoulder_roll: 0.003609725
+  shoulder_yaw: 0.003609725
+  elbow: 0.003609725
+  wrist_yaw: 0.003609725
+  wrist_pitch: 0.00425
+  wrist_roll: 0.00425
+  head: 0.00425
+
+effort:
+  hip: 120.0
+  knee: 120.0
+  waist_yaw: 120.0
+  waist_pitch: 36.0
+  waist_roll: 36.0
+  ankle_pitch: 36.0
+  ankle_roll: 24.0
+  shoulder_pitch: 36.0
+  shoulder_roll: 36.0
+  shoulder_yaw: 24.0
+  elbow: 24.0
+  wrist_yaw: 24.0
+  wrist_pitch: 6.0
+  wrist_roll: 6.0
+  head_yaw: 2.6
+  head_pitch: 0.6
+
+# Default joint positions (rad), the pose actions are offsets FROM. Mirrors
+# x2_ultra.py's init_state.joint_pos. Lives here because a stub import cannot
+# reach that dict (isaaclab mocked -> init_state is a MagicMock), and because
+# eval_x2_mujoco.py kept its own copy -- a FOURTH duplicate of the robot
+# definition. Keys are substrings, first match wins; side-specific before
+# generic (left_shoulder_roll must beat shoulder_roll).
+default_joint_pos:
+  left_shoulder_roll: 0.2
+  right_shoulder_roll: -0.2
+  left_shoulder_pitch: 0.2
+  right_shoulder_pitch: 0.2
+  hip_pitch: -0.312
+  knee: 0.669
+  ankle_pitch: -0.363
+  elbow: -0.6

@@ -198,7 +198,7 @@ class DefaultEnv:
                 self.viewer = mujoco.viewer.launch_passive(
                     self.mj_model,
                     self.mj_data,
-                    key_callback=self.elastic_band.MujuocoKeyCallback,
+                    key_callback=self._viewer_key_callback,
                     show_left_ui=False,
                     show_right_ui=False,
                 )
@@ -208,7 +208,9 @@ class DefaultEnv:
         else:
             if self.onscreen:
                 self.viewer = mujoco.viewer.launch_passive(
-                    self.mj_model, self.mj_data, show_left_ui=False, show_right_ui=False
+                    self.mj_model, self.mj_data,
+                    key_callback=self._viewer_key_callback,
+                    show_left_ui=False, show_right_ui=False,
                 )
             else:
                 mujoco.mj_forward(self.mj_model, self.mj_data)
@@ -462,6 +464,23 @@ class DefaultEnv:
                 self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
             else:
                 self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+
+    def _viewer_key_callback(self, keycode):
+        """Viewer key handler: elastic-band controls (7/8/9) if present, plus
+        'v' = re-bind the tracking camera to the pelvis. Recovers the camera
+        after an accidental key/drag knocks it to free-look."""
+        eb = getattr(self, "elastic_band", None)
+        if eb is not None and hasattr(eb, "MujuocoKeyCallback"):
+            eb.MujuocoKeyCallback(keycode)
+        try:
+            ch = chr(keycode)
+        except ValueError:
+            return
+        if ch in ("v", "V") and self.viewer is not None:
+            self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+            self.viewer.cam.trackbodyid = self.mj_model.body("pelvis").id
+            self.viewer.cam.distance = 2.5
+            print("[sim] camera re-bound to pelvis (press 'v' to re-track)", flush=True)
 
     def update_reward(self):
         with self.reward_lock:

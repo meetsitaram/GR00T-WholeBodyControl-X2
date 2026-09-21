@@ -1,0 +1,110 @@
+# Eleven-motion sequence covering every working family.
+#
+# Sequence (in user-requested order):
+#   1.  forward step                    fwd_step + one_ft        (-> fwd_step_1ft)
+#   2.  turn left 45                    turn_left + deg_45
+#   3.  right side-step                 side_right + default     (-> side_right_step)
+#   4.  turn right 45                   turn_right + deg_45
+#   5.  left side step                  side_left + default      (-> side_left_step)
+#   6.  crouch medium                   crouch + medium          (-> crouch_medium)
+#   7.  step backward                   back_step + half_ft
+#   8.  lean forward medium             lean_fwd + medium
+#   9.  turn torso left 40              torso_left + deg_40
+#  10.  lean forward medium             lean_fwd + medium
+#  11.  turn torso right 40             torso_right + deg_40
+#
+# Each motion is followed by a 2.0 s idle settle (queued via
+# hold_seconds) so the robot returns to a stable square stance before
+# the next motion starts. Aliases:
+#   * fwd_step magnitudes all collapse to fwd_step_1ft
+#   * side_left / side_right magnitudes all collapse to *_step
+#   * crouch magnitudes all collapse to crouch_medium
+#
+# Wall-clock budget:
+#   2.0s warmup
+#   + ~28.2s of motion
+#   + 11 x 2.0s = 22.0s idle pauses
+#   + 2.0s tail idle
+#   = ~54 s. Use ``--duration 60`` for the run_planner_smoke wrapper.
+
+commands:
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 1. forward step
+  - intent: fwd_step
+    magnitude: one_ft
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 2. turn left 45 deg
+  - intent: turn_left
+    magnitude: deg_45
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 3. right side-step
+  - intent: side_right
+    magnitude: default
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 4. turn right 45 deg
+  - intent: turn_right
+    magnitude: deg_45
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 5. left side-step
+  - intent: side_left
+    magnitude: default
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 6. crouch (medium)
+  - intent: crouch
+    magnitude: medium
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 7. step backward
+  - intent: back_step
+    magnitude: half_ft
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 8. lean forward (medium)
+  - intent: lean_fwd
+    magnitude: medium
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 9. turn torso left 40 deg (was deg_45 pre-v6 cap)
+  - intent: torso_left
+    magnitude: deg_40
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 10. lean forward (medium) again
+  - intent: lean_fwd
+    magnitude: medium
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0
+
+  # 11. turn torso right 40 deg (was deg_45 pre-v6 cap)
+  - intent: torso_right
+    magnitude: deg_40
+  - intent: idle
+    magnitude: default
+    hold_seconds: 2.0

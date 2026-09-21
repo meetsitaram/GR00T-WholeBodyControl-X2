@@ -1,0 +1,126 @@
+# @package _global_
+# LEG 5 -- the INCUMBENT X2-native lineage (3 encoders, trained from scratch
+# on X2, no frozen G1 core) resumed with the combined Pico fine-tune set.
+#
+# Self-contained recipe on sonic_x2_ultra. The lineage this reproduces was a
+# chain of one-delta experiment configs; their structural deltas are folded
+# in here so a clean clone can compose it:
+#   sphere feet, PD actuator randomization (events level0_4_pd), history
+#   policy obs v2, executed-feasible reward re-weights, slow-manip rebalance
+#   (anchor pos / body linvel), arm-dynamics tracking on the wrist_roll links,
+#   soft-landing terms, X2 wrist slice [25..30], real SMPL sidecars, adaptive
+#   sampling at uniform 0.1, fine-tune injection with corpus override.
+#
+# KEY COLLISIONS ARE INTENDED when the fine-tune keys already live in the
+# base corpus: override_corpus replaces them in place with IDENTICAL data
+# (same lengths, no bin shift); new keys append at the corpus tail. Universe
+# grows -> adaptive bins RESET at launch (known-benign).
+#
+# finetune_sample_rate is a FLOOR, not the share: all fine-tune clips are
+# PINNED into every 1024-slot reload and the base multinomial also samples
+# them. Effective share = rate + (1-rate)*n_ft/1024. 0.05 (not 0.1): higher
+# concentration hurt overall quality (mastery-then-memorize).
+#
+# Launch (resume from an incumbent checkpoint):
+#   +exp=manager/universal_token/all_modes/sonic_x2_leg5_pico_combined_ft
+#   +checkpoint=<model_step_NNNNNN.pt> +resume=true
+#   ++algo.config.num_learning_iterations=<absolute target>
+#
+# Required environment (fail loudly when unset):
+#   SMPL_MOTION_DIR   directory of per-clip SMPL sidecar pkls (<key>.pkl)
+#   X2_FINETUNE_PKL   fine-tune motion-lib pkl (build_pico_finetune_bundle.py)
+# Optional: MOTION_FILE (base corpus; default = demo bank).
+defaults:
+  - /exp/manager/universal_token/all_modes/sonic_x2_ultra
+  - override /manager_env/events: tracking/level0_4_pd
+  - override /manager_env/observations/policy: local_dir_hist_v2
+  - override /manager_env/rewards: tracking/base_5point_local_feet_acc_softland
+  - _self_
+
+exp_var: leg5_pico_combined_ft
+project_name: TRL_X2_BigRun
+
+num_envs: 12288          # PER GPU under accelerate (H100/H200); 4096 on a 32 GB card
+
+_ee_links: &ee_links
+  - left_wrist_roll_link
+  - right_wrist_roll_link
+
+manager_env:
+  config:
+    robot:
+      foot: sphere          # incumbent lineage convention
+  rewards:
+    # executed-feasible re-weights
+    tracking_anchor_ori:
+      weight: 1.5
+    tracking_relative_body_ori:
+      weight: 2.0
+    tracking_body_angvel:
+      weight: 2.0
+    # slow-manip rebalance
+    tracking_body_linvel:
+      weight: 1.0
+      params:
+        command_name: motion
+        std: 0.25
+    tracking_anchor_pos:
+      weight: 2.0
+      params:
+        command_name: motion
+        std: 0.15
+    # arm dynamics: end-effector linvel tracking + damped action rate/shake
+    tracking_arm_linvel:
+      _target_: isaaclab.managers.RewardTermCfg
+      func: gear_sonic.envs.manager_env.mdp:tracking_body_linvel_error
+      weight: 1.0
+      params:
+        command_name: motion
+        std: 0.25
+        body_names: *ee_links
+    action_rate_l2:
+      weight: -0.08
+    anti_shake_ang_vel:
+      weight: -0.015
+      params:
+        body_names: ["left_wrist_roll_link", "right_wrist_roll_link", "head_pitch_link"]
+    # soft landing at the X2 weights (shipped term defaults are the G1 values)
+    feet_impact_vel:
+      weight: -1.0
+    feet_grf_overshoot:
+      weight: -0.4
+      params:
+        soft_ratio: 1.2
+  commands:
+    motion:
+      body_names: [
+        "pelvis",
+        "left_hip_roll_link", "left_knee_link", "left_ankle_roll_link",
+        "right_hip_roll_link", "right_knee_link", "right_ankle_roll_link",
+        "torso_link",
+        "left_shoulder_roll_link", "left_elbow_link", "left_wrist_roll_link",
+        "right_shoulder_roll_link", "right_elbow_link", "right_wrist_roll_link",
+      ]
+      vr_3point_body: ["left_wrist_roll_link", "right_wrist_roll_link", "torso_link"]
+      reward_point_body: ["torso_link", "left_wrist_roll_link", "right_wrist_roll_link"]
+      motion_lib_cfg:
+        smpl_motion_file: ${oc.env:SMPL_MOTION_DIR,gear_sonic/data/motions/x2_pico_chores/smpl_sidecars}
+        adaptive_sampling:
+          uniform_sampling_rate: 0.1
+        # Optional exact-key exclusion list(s), one key per line:
+        #   ++manager_env.commands.motion.motion_lib_cfg.remove_motion_keys_file=[/path/EXCLUDE.txt]
+        fine_tune_dataset:
+          enable: true
+          motion_file: ${oc.env:X2_FINETUNE_PKL}
+          override_corpus: true
+          finetune_sample_rate: 0.05
+  observations:
+    tokenizer:
+      joint_pos_multi_future_wrist_for_smpl:
+        params:
+          joints_idx: [25, 26, 27, 28, 29, 30]
+
+algo:
+  config:
+    num_learning_iterations: 30000
+    adaptive_lr_max: 1.0e-4

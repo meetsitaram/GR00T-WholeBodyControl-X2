@@ -1,0 +1,63 @@
+# X2 Encoder - Observation Configuration
+# ======================================
+#
+# YAML-driven schema mirror of G1's ``observation_config.yaml`` (see
+# ``gear_sonic_deploy/policy/release/observation_config.yaml``) restricted
+# to the modality X2 actually trained on: a single 680-D 10-frame
+# future-window of *retargeted* commanded body_q + 6D rotation diff.
+#
+# Why this file exists
+# --------------------
+# The X2 PPO actor ONNX (``actor.onnx``) is fused with the SONIC encoder
+# inside one graph -- there is no separate encoder ONNX file the way G1
+# ships ``encoder.onnx`` + ``policy.onnx``. But the ``.pt`` checkpoint
+# *does* contain the encoder weights under
+# ``actor_module.encoders.g1.module.*`` (see
+# :mod:`gear_sonic.scripts.sonic_motion_token_labeler` for the key remap).
+# The recorder reuses those exact weights to label
+# ``action.motion_token`` so the column the VLA learns to predict is
+# byte-identical to what the deploy actor's internal encoder would emit
+# from the same 680-D observation.
+#
+# Pinning the observation list to YAML (instead of hard-coding it in
+# Python) gives us three things:
+#   1. parity with the G1 release: same vocabulary
+#      (``encoder_observations`` + ``encoder_modes``) so the artifact
+#      story reads the same across both robots,
+#   2. an audit trail when we change observation layout (the YAML diff
+#      shows up alongside the recorder change),
+#   3. a single chokepoint the validation tooling
+#      (``compare_recorder_vs_deploy_obs.py``) can target to assert
+#      byte-parity between recorder and deploy.
+#
+# ``encoder_observations`` is the *superset* of all observations any
+# mode might consume; ``encoder_modes`` then selects which observations
+# a given mode requires. Today X2 ships exactly one modality
+# (``retargeted_body_q``) consuming exactly one observation
+# (``x2_command_multi_future_nonflat``). The schema is structured to
+# accept future modalities (e.g. SMPL human pose, VR-only sparse points)
+# without breaking the recorder API -- adding a modality is a YAML +
+# registry edit, not a recorder rewrite.
+
+encoder:
+  dimension: 64           # FSQ-quantized motion-token output (2 x 32)
+  motion_fps: 50.0        # Recorder + planner control rate (Hz).
+                          # build_tokenizer_obs uses 1/motion_fps as
+                          # frame spacing.
+  dt_future_ref: 0.1      # Future window stride in seconds. 10 frames
+                          # x 0.1 s = 0.9 s lookahead, matching IsaacLab
+                          # ``arange(NUM_FUTURE_FRAMES) * frame_skips``
+                          # in
+                          # ``gear_sonic/envs/manager_env/mdp/commands.py``.
+  num_future_frames: 10   # Per-frame size: 31 jpos + 31 jvel + 6 ori
+                          #   = 68 features. Total = 10 x 68 = 680.
+
+  encoder_observations:
+    - name: "x2_command_multi_future_nonflat"
+      enabled: true
+
+  encoder_modes:
+    - name: "retargeted_body_q"
+      mode_id: 0
+      required_observations:
+        - x2_command_multi_future_nonflat

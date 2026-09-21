@@ -1,0 +1,31 @@
+# Boot-time auto-join for elastic training workers.
+#
+# Install (as ubuntu, on each worker):
+#   sudo cp gear_sonic/scripts/cloud/elastic-supervisor.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable elastic-supervisor
+#
+# Expects ~/launch_x2_elastic.sh (or whatever launcher the current run uses)
+# symlinked/copied to ~/launch_elastic_current.sh. On boot the node starts its
+# supervisor, which joins the c10d rendezvous on the reserved node and folds
+# back into training — no manual steps after a preemption restart.
+#
+# The reserved node ALSO gets this unit but with RDZV_IS_HOST=1 set inside its
+# launcher copy.
+
+[Unit]
+Description=Elastic SONIC training supervisor (auto-join on boot)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+ExecStart=/bin/bash /home/ubuntu/launch_elastic_current.sh
+Restart=always
+RestartSec=30
+StandardOutput=append:/home/ubuntu/elastic_service.log
+StandardError=append:/home/ubuntu/elastic_service.log
+
+[Install]
+WantedBy=multi-user.target

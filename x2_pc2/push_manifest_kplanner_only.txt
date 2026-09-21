@@ -1,0 +1,2 @@
+# kplanner-only follow-up: ship the planner daemon alone
+gear_sonic/scripts/pc2_kplanner_onnx.py   ${PC2_PREFIX}/pc2_kplanner_onnx.py

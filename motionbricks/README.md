@@ -197,6 +197,16 @@ For details on the motion feature representation, skeleton system, coordinate co
 
 For a step-by-step guide to training MotionBricks on your own motion data and adapting it to a new robot, see [docs/adding_your_own_dataset.md](docs/adding_your_own_dataset.md).
 
+### AgiBot X2 Ultra (walk / turn planner scope)
+
+X2 support: skeleton classes (`motionbricks/motionlib/core/skeletons/x2.py`),
+the motion-lib pkl dataset + walk/turn filters (`motionbricks/data/x2_category_dataset.py`,
+`x2_loco_filters.py`), training entrypoints (`scripts/train_{vqvae,root,pose}_x2.py`,
+`scripts/build_feature_cache_x2.py`), inference (`motion_backbone/inference/load_x2_planner.py`)
+and the ONNX export (`scripts/export_x2_planner_onnx.py`, `scripts/smoke_test_x2_inference.py`).
+The default source corpus is the demo bank regenerated from the upstream reference clips
+(`tools/build_demo_bank_from_upstream.sh`); point `--pkl` at your own X2 motion-lib pkl to train.
+
 ## Related Work
 
 **Kimodo** — A sibling project focused on offline motion generation, complementary to MotionBricks' real-time runtime.

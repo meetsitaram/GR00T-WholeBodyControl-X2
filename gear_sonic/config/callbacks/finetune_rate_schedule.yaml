@@ -1,0 +1,32 @@
+# Anneal fine_tune_dataset.finetune_sample_rate without restarting the run.
+#
+# Opt in from an exp config's defaults list:
+#     - /callbacks/finetune_rate_schedule
+#
+# Steps are ABSOLUTE global steps, so they compose with a resumed run's counter.
+#
+# Keep final_rate ABOVE ZERO: the low-LR tail is where consolidation happens, and
+# starving the target clips there invites drift back to the breadth distribution.
+#
+# CAVEAT: the fine-tune route samples UNIFORMLY over the pinned clips, so this
+# decays mastered and failing clips alike — it is a clock, not a competence
+# signal. See the callback docstring for the per-clip fix that would supersede it.
+#
+# ---------------------------------------------------------------------------
+# Values below = the v7 drill's remaining window, sized by EXPOSURE BUDGET, not
+# by fitting a curve through the drill's start. The drill ran FLAT at 0.5 from
+# 11,050, so by 15,000 it had already spent 1,975 rate-steps against the 1,803 a
+# 0.5->0.2 cosine would have spent over the same stretch — 9.6% AHEAD. Of that
+# cosine's 3,133 total, 1,158 remain for 15,000->20,000, i.e. a mean rate of
+# 0.232. A cosine's mean is exactly (start+floor)/2, which pins the pair:
+#     floor 0.10 -> start 0.363 | floor 0.15 -> start 0.313 | floor 0.20 -> 0.263
+# 0.30 -> 0.15 spends 1,125 vs the 1,158 budget (-2.8%).
+# Naively restarting the taper at 0.5 here would double-count the 4k flat steps.
+finetune_rate_schedule:
+  _target_: gear_sonic.trl.callbacks.finetune_rate_schedule_callback.FinetuneRateScheduleCallback
+  start_rate: 0.30
+  final_rate: 0.15
+  start_step: 15000
+  end_step: 20000
+  schedule: cosine    # or linear
+  log_every: 250      # matches the corpus reshuffle cadence

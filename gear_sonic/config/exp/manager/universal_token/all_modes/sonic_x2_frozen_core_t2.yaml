@@ -1,0 +1,81 @@
+# @package _global_
+# FROZEN-CORE T2 — dynamics adaptation of the FROZEN GEAR-SONIC G1 core on X2.
+#
+# Policy = FrozenCoreG1ActorModule: X2 obs -> Phi codec -> frozen G1 encoder/FSQ
+# -> LoRA'd g1_dyn decoder -> Phi+ -> X2 actions. With lora disabled this is
+# EXACTLY the T1 zero-shot policy (batched parity 3.3e-06 vs the MuJoCo
+# wrapper). Only the LoRA factors (+ PPO std, + fresh critic) train.
+#
+# Paper recipe: arXiv 2605.23733 dynamics adaptation (identical rewards/DR/obs
+# to source pretraining; adapters absorb the dynamics residual).
+#
+# LAUNCH CHECKLIST (do not skip; each item cost real time once):
+#   [ ] Isaac launch protocol: kill prior instances BY PID + verify VRAM.
+#   [ ] GPU etiquette: coordinate with the operator's sim sessions.
+#   [ ] First smoke: num_envs=64 headless few iters -> hydra paths resolve,
+#       [x2_ultra] waist_pr_effort=24 banner prints, rew/step sane, LoRA
+#       param count printed by the module (245.7k @ rank 16).
+#   [ ] Control log for any restart before interpreting metrics
+#       (SONIC log-semantics gotcha).
+#   [ ] MuJoCo gates for candidates: same-ceiling only (waist forcerange
+#       override flag in the harness — see ledger; MJCF still carries 48).
+
+defaults:
+  - /exp/manager/universal_token/all_modes/sonic_x2_ultra
+  - _self_
+
+exp_var: frozen_core_t2_r16
+project_name: TRL_X2Ultra_FrozenCore
+
+# Local 5090 smoke sizing; raise for a real run (bigrun used 4096+).
+num_envs: 1024
+
+manager_env:
+  commands:
+    motion:
+      # CRITICAL: the wrapper consumes ONLY g1-mode tokenizer inputs
+      # (command_multi_future_nonflat + motion_anchor_ori_b_mf_nonflat).
+      # teleop/smpl-mode episodes would feed empty command segments.
+      encoder_sample_probs:
+        g1: 1.0
+        teleop: 0.0
+        smpl: 0.0
+      motion_lib_cfg:
+        # X2 corpus @50 fps. Default = the regenerated demo bank (see
+        # tools/build_demo_bank_from_upstream.sh); point MOTION_FILE at your
+        # own X2 corpus (single pkl or directory of per-clip pkls) for a real run.
+        motion_file: ${oc.env:MOTION_FILE,gear_sonic/data/motions/x2_pico_chores/x2_pico_chores_0917.pkl}
+  config:
+    robot:
+      # VERIFY AT LAUNCH: the "[x2_ultra] Building MuJoCo-mirror cfg ...
+      # waist_pr_effort=24.0" banner MUST print — if it doesn't, these
+      # overrides did not land and the env is dishonest (trained-at-36 bug).
+      foot: sphere          # incumbent lineage convention (14k = sphere)
+      waist_pr_effort: 24.0 # hardware-enforced limit; legacy runs trained
+                            # WRONG at 36. Action scale stays 36-derived on
+                            # purpose (source-compatible semantics).
+
+algo:
+  config:
+    actor:
+      # RAW obs — the codec algebra is in physical units. Incumbent actor
+      # was also un-normalized; keep it that way.
+      running_mean_std: false
+      input_obs_dict: true
+      # The wrapper returns a plain (B,31) mean; no aux losses.
+      has_aux_loss: false
+      backbone:
+        _target_: gear_sonic.trl.modules.frozen_core_g1_actor.FrozenCoreG1ActorModule
+        # G1 release ckpt loads INSIDE the module (nvidia/GEAR-SONIC
+        # sonic_release/last.pt from the HF cache by default; set
+        # G1_CHECKPOINT to a local last.pt to override). No framework
+        # +checkpoint= needed — critic starts fresh.
+        g1_checkpoint: ${oc.env:G1_CHECKPOINT,null}
+        lora:
+          rank: 16
+          alpha: 16.0
+          targets: ["*"]      # all 7 g1_dyn decoder Gemms (245.7k params)
+    # Critic: FRESH X2-native critic (paper LoRA'd their SOURCE critic, but
+    # our critic obs include cartesian body terms Phi does not map; a fresh
+    # X2 critic sidesteps that entirely). Ablation option: warm-start from
+    # the incumbent 14k value_state_dict via a selective loader.

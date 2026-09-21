@@ -30,8 +30,16 @@ class VideoWriter:
         self.stream = self.container.add_stream(codec, rate=fps)
         self.stream.width = width
         self.stream.height = height
-        thread = threading.Thread(target=self._writer_worker, daemon=True)
-        thread.start()
+        # Keep a handle so stop() can join the worker. Without this,
+        # closing a writer leaves the worker blocked on queue.get()
+        # forever; callers that churn through many short episodes
+        # (e.g. the dataset segmenter) leak ~50-100 MB per writer
+        # in orphaned thread state + libav codec contexts.
+        self._worker_thread = threading.Thread(
+            target=self._writer_worker, daemon=True
+        )
+        self._stopped = False
+        self._worker_thread.start()
 
     def _assert_dimensions(self, frame: np.ndarray) -> None:
         assert (
@@ -48,8 +56,11 @@ class VideoWriter:
     def _writer_worker(self) -> None:
         while True:
             frame = self.queue.get()
+            # A None sentinel from stop() means "drain done, exit".
+            # Previously this was `continue` which silently leaked
+            # the worker thread when the writer was retired.
             if frame is None:
-                continue
+                break
             self._assert_dimensions(frame)
             frame = av.VideoFrame.from_ndarray(frame, format="rgb24")
 
@@ -79,21 +90,47 @@ class VideoWriter:
 
     def stop(self) -> str:
         """Blocking call. Waits for queue to drain, flushes, and closes the container."""
-        if not self.queue.empty():
-            print("Waiting for video writer queue to empty...")
-            while not self.queue.empty():
-                time.sleep(0.1)
+        if self._stopped:
+            return self.output_path
+        # Signal the worker to exit after draining and join it. This
+        # guarantees the worker is no longer touching self.stream or
+        # self.container before we flush + close them (the old code
+        # polled queue.empty() then immediately flushed, which had a
+        # latent race against an in-flight encode call).
+        self.queue.put(None)
+        self._worker_thread.join()
 
-        print("Video writer queue is empty, flushing stream...")
         self._flush_stream()
         self.container.close()
+        self._stopped = True
         return self.output_path
 
     def cancel(self) -> None:
         """Immediately stops writing and deletes the output file."""
+        if self._stopped:
+            return
+        # Drain the worker before tearing down so we don't crash it
+        # mid-encode by closing the container under it.
+        try:
+            self.queue.put(None)
+            self._worker_thread.join(timeout=5.0)
+        except Exception:
+            pass
         if os.path.exists(self.output_path):
             os.remove(self.output_path)
         self.container.close()
+        self._stopped = True
 
     def __del__(self) -> None:
-        self.container.close()
+        if getattr(self, "_stopped", False):
+            return
+        # Last-ditch cleanup if the caller forgot to stop() / cancel().
+        try:
+            self.queue.put_nowait(None)
+            self._worker_thread.join(timeout=2.0)
+        except Exception:
+            pass
+        try:
+            self.container.close()
+        except Exception:
+            pass

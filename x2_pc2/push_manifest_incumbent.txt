@@ -1,0 +1,21 @@
+# MODEL-ONLY manifest: swap the sonic policy + planner template slots in place.
+#   ./x2_pc2/push_to_pc2.sh --manifest x2_pc2/push_manifest_incumbent.txt --pc2 run@<PC2_IP>
+#
+# SLOT PATHS ARE FIXED: the candidate replaces the deployed file in place, so
+# whatever sits at the canonical path IS what the robot runs -- no env switch
+# to forget at ignition (an unset override is a silent wrong-config on a real
+# robot). Rollback = restore from the GATE 3 backup dir printed by push_to_pc2.sh.
+#
+# Pair the tuning preset with the model lineage (X2_RITUAL_TUNING in
+# robot_env.env): legacy-trained models run under bigrun.yaml, vendor-plant
+# (S0+) models under trained_gains_s0.yaml. See configs/real_deploy_tuning/README.md.
+#
+# After a model swap, stale provenance sidecars in policies/ describe the
+# WRONG model. Remove them on PC2:
+#   ssh run@<PC2_IP> 'rm -f ${PC2_PREFIX}/policies/agibot_x2_sonic.onnx.*.json \
+#     ${PC2_PREFIX}/planner_stack/models/planner_onnx/x2_planner_template.onnx.provenance.json'
+#
+# EDIT the ${X2_MODELS} lines to your exported files (MODELS.md).
+# <local path>    <PC2 absolute path>
+${X2_MODELS}/x2_sonic_g1.onnx                ${PC2_PREFIX}/policies/agibot_x2_sonic.onnx
+${X2_MODELS}/x2_planner_template.onnx        ${PC2_PREFIX}/planner_stack/models/planner_onnx/x2_planner_template.onnx
