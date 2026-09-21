@@ -57,14 +57,21 @@ The frozen G1 **planner** core with Phi heads exports separately:
 `python motionbricks/scripts/export_g1core_x2_planner_onnx.py --out-dir $X2_MODELS/kplanner_g1core --mode both`
 (the directory `PLANNER_MODEL=` points at).
 
+## Shipped set
+
+The frozen-G1 set the robot ran (`x2_sonic_s1ft16000_g1.onnx`, its token graph
+and the public release tokenizer) ships under `gear_sonic_deploy/models/`
+(git-lfs; `MODELS.md` "Shipped frozen G1-core set"). The export steps above
+are how to make a new one; the commands below run the shipped one.
+
 ## Run in sim (acceptance command, token path)
 
 ```bash
 cd <repo> && TOKEN_SVC_OPERATOR_ROOT_LEVEL=zero ALLOW_MISMATCH=1 SIMSTACK_OMNIHAND=1 \
 SIM_TUNING_YAML=gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0.yaml \
-MODEL=$X2_MODELS/s1p4_35000/exported/x2_sonic_s1p4_35000_g1.onnx \
-SIMSTACK_TOKEN=$X2_MODELS/s1p4_35000/exported/x2_sonic_s1p4_35000_g1_token.onnx \
-SIMSTACK_TOKENIZER=$X2_MODELS/armA_14900/exported/x2_smpl_tokenizer_v11release.onnx \
+MODEL=gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx \
+SIMSTACK_TOKEN=gear_sonic_deploy/models/x2_sonic_s1ft16000_g1_token.onnx \
+SIMSTACK_TOKENIZER=gear_sonic_deploy/models/x2_smpl_tokenizer_v11release.onnx \
 PLANNER_MODEL=$X2_MODELS/kplanner_g1core \
 KPLANNER_PROFILE=gear_sonic/config/kplanner_profiles/bigrun_teleop_v1.env \
 ./gear_sonic/scripts/sim_onnx_planner.sh --whole-body-teleop
@@ -73,14 +80,14 @@ KPLANNER_PROFILE=gear_sonic/config/kplanner_profiles/bigrun_teleop_v1.env \
 then `./gear_sonic/scripts/run_pico_teleop.sh` ([`F03_pico_teleop.md`](F03_pico_teleop.md)).
 Expected: `[whole-body] TOKEN GRAPH — deploy-faithful rehearsal via simstack_local.sh`,
 the token service's `tokenizer .../x2_smpl_tokenizer_v11release.onnx` line,
-deploy `Loaded ONNX: .../x2_sonic_s1p4_35000_g1.onnx`.
+deploy `Loaded ONNX: .../x2_sonic_s1ft16000_g1.onnx`.
 
 Planner-only (pad / VR) with the frozen-G1 planner profile:
 
 ```bash
 cd <repo> && ALLOW_MISMATCH=1 \
 SIM_TUNING_YAML=gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0.yaml \
-MODEL=$X2_MODELS/s1p4_35000/exported/x2_sonic_s1p4_35000_g1.onnx \
+MODEL=gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx \
 PLANNER_MODEL=$X2_MODELS/kplanner_g1core \
 KPLANNER_PROFILE=gear_sonic/config/kplanner_profiles/g1core_bare_v1.env \
 ./gear_sonic/scripts/sim_onnx_planner.sh

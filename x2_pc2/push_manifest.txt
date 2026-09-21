@@ -74,6 +74,10 @@ gear_sonic_deploy/models/x2_sonic_v16ft8_45000_dual.onnx             ${PC2_PREFI
 gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1.onnx               ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_g1.onnx
 gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1_token.onnx         ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_g1_token.onnx
 gear_sonic_deploy/models/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx   ${PC2_PREFIX}/policies/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx
+# frozen G1-core set (F07; x2_pc2/robot_env.env.frozen.template points here)
+gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx                  ${PC2_PREFIX}/policies/x2_sonic_s1ft16000_g1.onnx
+gear_sonic_deploy/models/x2_sonic_s1ft16000_g1_token.onnx            ${PC2_PREFIX}/policies/x2_sonic_s1ft16000_g1_token.onnx
+gear_sonic_deploy/models/x2_smpl_tokenizer_v11release.onnx           ${PC2_PREFIX}/policies/x2_smpl_tokenizer_v11release.onnx
 # Bring-your-own alternative (MODELS.md): replace the four lines above with
 # your exported set and point X2_RITUAL_MODEL / X2_WB_* in robot_env.env at it:
 #${X2_MODELS}/<your_model>_dual.onnx               ${PC2_PREFIX}/policies/<your_model>_dual.onnx
