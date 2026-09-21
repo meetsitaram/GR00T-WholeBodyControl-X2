@@ -53,9 +53,37 @@ tokenizer for this lineage is the release SMPL tokenizer
 (`x2_smpl_tokenizer_v11release.onnx`, see [`MODELS.md`](../../MODELS.md));
 keep it beside the set.
 
-The frozen G1 **planner** core with Phi heads exports separately:
-`python motionbricks/scripts/export_g1core_x2_planner_onnx.py --out-dir $X2_MODELS/kplanner_g1core --mode both`
-(the directory `PLANNER_MODEL=` points at).
+## G1-core planner graphs (`PLANNER_MODEL` for this lineage)
+
+The kplanner graphs that pair with the frozen-core policies
+(`tinkerbuggy/sonic-x2/kplanner_g1core/x2_planner_template_s1d_a05_ws.onnx`, the one the robot ran) are
+**not** trained: they wrap NVIDIA's frozen G1 planner (MotionBricks) in an
+X2 interface. Four ingredients, in order:
+
+| Ingredient | Where it comes from |
+|---|---|
+| the frozen G1 planner core (`motionbricks/out/motionbricks_{vqvae,pose,root}/version_1`, ~2.2 GB) and the stock clip library `motionbricks/out/G1-clip.ckpt` | upstream git-lfs, excluded from a normal `git lfs pull` by the repo's `.lfsconfig`: `git lfs pull --include="motionbricks/out/**" --exclude=""` (the fork serves the upstream objects) |
+| the analytic Phi alignment (X2 qpos 38 <-> G1 qpos 36: joint map, per-joint affines, wrist naming swap) | in the exporter's code (`_PHI_TABLE`), nothing to fetch |
+| the S1 residual heads (small MLPs that correct Phi, trained on paired G1/X2 clips) | shipped: `gear_sonic_deploy/models/kplanner_g1core_s1d_heads.pt` (338 KB). Retraining them needs the paired corpus (`build_frozen_core_pair_cache.py`, `train_frozen_core_heads.py`), i.e. BONES-SEED |
+| a clip library with turn modes 15/16 and walk-start 17/18 appended to `G1-clip.ckpt` | build it: `build_g1_turn_clip_library.py --csv <turn.csv> --csv-mirror <turn_M.csv>` (a G1 in-place-turn CSV pair; the originals were a BONES-SEED idle_turn take, not shipped) then `build_g1_walkstart_clip_library.py` (uses the shipped first-party tape `gear_sonic/data/kplanner_tapes/walkstart_20260812.frames.f32`) |
+
+Then export (`PYTHONPATH="$PWD:$PWD/motionbricks"`):
+
+```bash
+python motionbricks/scripts/export_g1core_x2_planner_onnx.py --out-dir $X2_MODELS/kplanner_g1core --mode both \
+    --heads gear_sonic_deploy/models/kplanner_g1core_s1d_heads.pt --mask-z --resid-scale 0.5
+```
+
+Verified 2026-09-21: rebuilt this way, the template graph has the same size,
+node and initializer counts as the robot's graph and produces bit-identical
+plans for walk and crouch-walk commands; only the turn template depends on
+which turn CSV pair you feed the first builder (the originals were the
+dataset's `idle_turn_270_002` take and its mirror).
+`--heads --mask-z --resid-scale 0.5` reproduces the `s1d_a05_ws` variant;
+without `--heads` you get the analytic S0 graph. The output directory is
+what `PLANNER_MODEL=` points at. Without the turn clip pair, download the
+finished graph from HF `tinkerbuggy/sonic-x2/kplanner_g1core/` instead
+(`MODELS.md`).
 
 ## Shipped set
 

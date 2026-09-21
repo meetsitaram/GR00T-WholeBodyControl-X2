@@ -140,6 +140,7 @@ A	gear_sonic/data/audio/cue_replay_started.wav	Operator audio cue played on the 
 A	gear_sonic/data/audio/teleop_disengaged.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
 A	gear_sonic/data/audio/teleop_engaged.wav	Operator audio cue played on the laptop (engage/disengage, record/replay start-stop).
 A	gear_sonic/data/encoder/x2_observation_config.yaml	X2 Encoder - Observation Configuration
+A	gear_sonic/data/kplanner_tapes/walkstart_20260812.frames.f32	First-party kplanner served-stream tape (2026-08-12 sim session) from which build_g1_walkstart_clip_library.py lifts the walk-start templates.
 A	gear_sonic/data/motions/gestures/gestures_v1.yaml	Live-trigger gesture catalog for the Quest3 planner stack.
 A	gear_sonic/data/motions/kplanner_idle_anchor_g1teleop_v3.pkl	Small joblib pickle (kplanner idle-anchor qpos) via git-lfs.
 A	gear_sonic/data/motions/x2_pico_chores/README.md	X2 Pico chores reference set — Operator Pico full-body teleop session on the AgiBot X2 Ultra (house-chores
@@ -417,6 +418,7 @@ A	gear_sonic_deploy/docker_x2/docker-compose.yml	X2 Ultra MuJoCo-sim container f
 A	gear_sonic_deploy/docker_x2/enter_sim.sh	Build (idempotent) and drop into a shell inside the X2 sim container, with DDS isolated to loopback (ROS_LOCALHOST_ONLY=1, ROS_DOMAIN_ID=73 from docker-compose.yml).
 A	gear_sonic_deploy/docker_x2/get_x2_sonic_ready.sh	One-shot bring-up: build the X2 container in REAL-ROBOT mode AND run the deploy node in --dry-run, with operator-gated safety prompts the whole way.
 A	gear_sonic_deploy/models/README.md	Shipped default model set: `x2_sonic_v16ft8_45000` (native 3-encoder, dual-head) — The four ONNX graphs here (git-lfs) are the default the sim rituals (`sim_onnx_planner.sh --whole-body-teleop`, `simstack_local.sh`) and
+A	gear_sonic_deploy/models/kplanner_g1core_s1d_heads.pt	S1 residual heads (338 KB) for the G1-core planner wrap; --heads input of export_g1core_x2_planner_onnx.py to rebuild the s1d_a05_ws graph.
 A	gear_sonic_deploy/models/x2_smpl_tokenizer_v11release.onnx	Public G1 release SMPL tokenizer (smpl_obs 840 -> motion token 64) exported to ONNX; pairs with the frozen G1-core set.
 A	gear_sonic_deploy/models/x2_sonic_s1ft16000.manifest.txt	md5 + provenance of the shipped frozen G1-core set.
 A	gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx	Shipped frozen G1-core pose graph (obs 1670; folded LoRA from s1ft_it16000_merged.pt); the set the robot ran 2026-09-09; MODEL / X2_RITUAL_MODEL for the F07 lineage.
@@ -506,6 +508,8 @@ A	motionbricks/motionbricks/motion_backbone/inference/neural_planner.py	Robot-ag
 A	motionbricks/motionbricks/motionlib/core/skeletons/x2.py	AgiBot X2 Ultra — MuJoCo body order matches gear_sonic ``MUJOCO_JOINT_NAMES`` plus pelvis root and two dummy toe joints (same foot-contact pattern as G1Skeleton34).
 A	motionbricks/scripts/build_feature_cache_x2.py	Pre-compute the X2 MotionBricks FK feature cache in parallel.
 A	motionbricks/scripts/build_frozen_core_pair_cache.py	Build the S1 paired-chunk training cache (frozen-core stage S1, build step 1).
+A	motionbricks/scripts/build_g1_turn_clip_library.py	Appends turn_left/turn_right modes (15/16) to the upstream G1 clip library from a G1 in-place-turn CSV pair (not shipped).
+A	motionbricks/scripts/build_g1_walkstart_clip_library.py	Appends walk_start_left/right modes (17/18) to the turn library from the shipped first-party tape.
 A	motionbricks/scripts/build_x2_planner_clips.py	Bake the X2 mode-template clip library used by the pose-template inference path.
 A	motionbricks/scripts/build_x2_skeleton_assets.py	Build X2 skeleton assets, motion stats, and bootstrap hparams.yaml for VQVAE/pose/root.
 A	motionbricks/scripts/export_g1core_x2_planner_onnx.py	Export the FROZEN G1 stock planner wrapped in analytic Phi heads as an X2-contract ONNX graph (frozen-core S0).

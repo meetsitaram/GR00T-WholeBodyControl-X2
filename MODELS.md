@@ -121,7 +121,8 @@ $X2_MODELS/
 folder `tinkerbuggy/sonic-x2/kplanner_g1core/` ships the G1-core planners
 under their variant names (`tinkerbuggy/sonic-x2/kplanner_g1core/x2_planner_template_s1d_a05_ws.onnx` is the one
 the robot ran); copy or symlink the variant you want to
-`$X2_MODELS/kplanner_g1core/x2_planner_template.onnx`. The HF folder
+`$X2_MODELS/kplanner_g1core/x2_planner_template.onnx` (or rebuild the graph
+yourself: F07 "G1-core planner graphs"). The HF folder
 `tinkerbuggy/sonic-x2/kplanner_onnx/` holds the incumbent template / velocity pair under the plain names.
 
 The set names above (`pico_39000`, `s1p4_35000`, ...) are only the example
