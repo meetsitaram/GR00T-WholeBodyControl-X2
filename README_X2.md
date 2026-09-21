@@ -44,6 +44,23 @@ to export it. No third-party motion data and no robot address ship here.
 | F11 | [Docker test image](docs/x2/F11_docker.md) |
 | F12 | [Training and finetuning on Nebius](docs/x2/F12_training_nebius.md) |
 
+## How the X2 model compares to the stock G1 release
+
+Scored in Isaac Lab under the SONIC paper's criterion (a clip fails if the
+root or an end-effector height deviates by more than 0.25 m or the root
+orientation by more than 1 rad; MPJPE-L over the successful clips).
+
+| Set | Success (%) G1 stock | Success (%) X2 trained | MPJPE-L (mm) G1 stock | MPJPE-L (mm) X2 trained |
+|---|---|---|---|---|
+| novel500 (in-distribution) | 97.8 | 97.2 | 26.9 | 34.3 |
+| hard300 (in-distribution tail) | 89.0 | 73.3 | 35.3 | 41.5 |
+| PHUMA 1,931 (out-of-distribution) | 86.8 | 66.2 | 32.8 | 43.4 |
+| Pico captures via the SMPL encoder (27) | 40.7 | 66.7 | 40.4 | 42.4 |
+
+novel500 and hard300 are motion-library sets, PHUMA is the out-of-distribution
+benchmark, and the Pico row is our own VR teleop captures through the SMPL
+encoder. Details in the [technical report](https://sonic-agibot-x2.github.io/static/pdfs/sonic-agibot-x2-port.pdf).
+
 ## Where the X2 code lives
 
 Everything the port added is under a handful of directories. One line per

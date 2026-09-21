@@ -1,25 +1,60 @@
 <div align="center">
-
-  <img src="media/groot_wbc.png" width="800" alt="GEAR SONIC Header">
-
-  <!-- --- -->
-  
-  
+  <img src="media/x2/x2_reference_to_real.gif" width="800" alt="From reference motion to the real robot: retargeted reference, trained controller in simulation, the same controller on the AgiBot X2 Ultra">
+  <p><em><strong>From reference motion to the real robot.</strong> One motion, three stages: the retargeted reference motion, the trained controller in simulation, and the same controller on the AgiBot X2 Ultra.</em></p>
 </div>
+
+# SONIC on the AgiBot X2 Ultra
+
+<p style="font-size: 1.2em;">
+  <a href="https://sonic-agibot-x2.github.io/"><strong>Project page</strong></a> |
+  <a href="https://huggingface.co/tinkerbuggy/sonic-x2"><strong>Models</strong></a> |
+  <a href="https://sonic-agibot-x2.github.io/static/pdfs/sonic-agibot-x2-port.pdf"><strong>Technical report</strong></a> |
+  <a href="docs/x2/README.md"><strong>Docs</strong></a> |
+  <a href="https://github.com/NVlabs/GR00T-WholeBodyControl"><strong>Upstream (NVIDIA GEAR-SONIC)</strong></a>
+</p>
 
 <div align="center">
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-76B900.svg)](LICENSE)
 [![IsaacLab](https://img.shields.io/badge/IsaacLab-2.3.2-orange.svg)](https://github.com/isaac-sim/IsaacLab/releases/tag/v2.3.2)
-[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-76B900.svg)](https://nvlabs.github.io/GR00T-WholeBodyControl/)
-[![Demo](https://img.shields.io/badge/Live%20Demo-GEAR--SONIC-blue.svg)](https://nvlabs.github.io/GEAR-SONIC/demo.html)
+[![Upstream](https://img.shields.io/badge/upstream-GR00T--WholeBodyControl-blue.svg)](https://github.com/NVlabs/GR00T-WholeBodyControl)
 
 </div>
 
+## AgiBot X2 Ultra support
+
+This fork adds the **AgiBot X2 Ultra** (31 DOF, OmniHand) as a second
+embodiment of GEAR-SONIC: a motion library retargeted onto the X2, a
+whole-body controller trained on it in simulation and deployed through the
+robot's own motion controller, and three ways to drive it live (gamepad,
+Quest 3 VR, and whole-body teleoperation from the operator's VR-captured
+motion). It comes with a MuJoCo sim that runs the real deploy binary, the PC2
+robot bring-up, the training and export chain, and a trained model set in
+the repository so the sim runs out of the box.
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><b>Whole-body teleoperation</b></td>
+<td align="center"><b>Motion following, next to a Unitree G1</b></td>
+</tr>
+<tr>
+<td align="center"><img src="media/x2/x2_wholebody_teleop.gif" width="360" alt="Live whole-body teleoperation on the AgiBot X2 Ultra"></td>
+<td align="center"><img src="media/x2/x2_vs_g1_gangnam.gif" width="360" alt="Gangnam-style dance on the AgiBot X2 (right) and a Unitree G1 (left)"></td>
+</tr>
+<tr>
+<td align="center"><em>The operator stands behind the robot; the robot follows.</em></td>
+<td align="center"><em>X2 (right) and a G1 on the stock SONIC release (left).</em></td>
+</tr>
+</table>
+</div>
+
+**Everything X2 starts at [`README_X2.md`](README_X2.md)**: what ships, the
+runbooks ([`docs/x2/`](docs/x2/README.md)), models ([`MODELS.md`](MODELS.md)),
+results, and where the code lives. The rest of this page is the upstream
+GR00T-WholeBodyControl README, unchanged.
+
 ---
-
-
-
 
 # GR00T-WholeBodyControl
 
@@ -434,11 +469,3 @@ For the Decoupled WBC used in GR00T N1.5 and N1.6 models, please refer to the [D
 We would like to acknowledge the following projects from which parts of the code in this repo are derived from:
 - [Beyond Mimic](https://github.com/HybridRobotics/whole_body_tracking)
 - [Isaac Lab](https://github.com/isaac-sim/IsaacLab)
-
-## AgiBot X2 Ultra
-
-This fork adds the AgiBot X2 Ultra as a second embodiment: gamepad / Quest 3 / Pico whole-body
-teleop, motion and tape replay, a docker-backed MuJoCo sim of the real deploy binary, a PC2
-colcon deploy, and Nebius training for native and frozen-G1-core models.
-Start at [README_X2.md](README_X2.md) and the runbooks under [docs/x2/](docs/x2/README.md);
-a default model set ships (git-lfs), other models are bring-your-own, see [MODELS.md](MODELS.md).

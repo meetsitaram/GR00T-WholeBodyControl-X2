@@ -485,6 +485,9 @@ A	gear_sonic_deploy/thirdparty/aimdk_msgs/.gitignore	AgiBot SDK content is fetch
 A	gear_sonic_deploy/thirdparty/aimdk_msgs/README.md	aimdk_msgs (bring your own — from AgiBot's official SDK) — The deploy node and the docker sim image build against AgiBot's `aimdk_msgs
 A	install_scripts/install_quest3.sh	install_quest3.sh Sets up the gear_sonic_teleop venv for Quest 3 VR teleop.
 A	install_scripts/setup_x2.sh	setup_x2.sh — zero-friction setup for the X2 SONIC sim + deploy stacks.
+A	media/x2/x2_reference_to_real.gif	README hero: reference motion -> sim -> real X2 (from the project page video).
+A	media/x2/x2_vs_g1_gangnam.gif	README: Gangnam-style dance on the X2 (right) next to a stock-SONIC G1 (left).
+A	media/x2/x2_wholebody_teleop.gif	README: live whole-body Pico teleoperation on the X2.
 A	motionbricks/MODEL_REGISTRY.md	Kplanner model registry (X2 planner: vqvae / root / pose) — Why this exists: checkpoints accumulate across training eras in
 A	motionbricks/motionbricks/data/clip_split.py	Long-clip windowing for X2 planner training data.
 A	motionbricks/motionbricks/data/x2_category_dataset.py	PyTorch dataset: X2 motion-lib PKL(s) -> MotionBricks global motion features.
@@ -514,6 +517,7 @@ A	tools/check_docs.py	Check that every path / command target mentioned in the X2
 A	tools/check_x2_ownership.py	Ownership gate: every tracked file is upstream or listed in X2_FILES.txt with a purpose; --write regenerates the list from the diff against the upstream base.
 A	tools/git-hooks/install.sh	Install the security pre-commit hook into this clone (idempotent; chains any existing pre-commit hook).
 A	tools/git-hooks/pre-commit-security.sh	Pre-commit security gate: blocks commits whose STAGED changes contain emails, credentials, tokens, or account identifiers.
+A	tools/video_to_gif.sh	Two-pass palette mp4/mov -> README gif in the upstream media style (width, fps, trim).
 A	x2_pc2/PORT_REGISTRY.md	PORT REGISTRY — single source of truth for every ZMQ port in the stack — **Rule: no new socket without a row here first.** This file exists because of
 A	x2_pc2/install_camera_bridge_service.sh	Install/refresh the X2 camera bridge as a boot service ON PC2.
 A	x2_pc2/install_pad_autopair_service.sh	Install/refresh the boot daemon that pairs the gamepad and fires the ignition ritual on the pad chord: x2_pc2/x2-pad-autopair.service -> x2_pad_autopair.py --start-cmd ritual_start_demo.sh.
@@ -538,7 +542,7 @@ A	x2_pc2/x2-pad-autopair.service	Paths are the default PC2_PREFIX; x2_pc2/instal
 
 M	.gitattributes	Machine learning models and data files
 M	.gitignore	Byte-compiled / optimized / DLL files
-M	README.md	GR00T-WholeBodyControl — <img src="media/groot_wbc.png" width="800" alt="GEAR SONIC Header">
+M	README.md	Upstream README with an X2 header (hero clip, links) and an "AgiBot X2 Ultra support" section on top; the NVIDIA text below it is unchanged.
 M	download_from_hf.py	Download GEAR-SONIC model checkpoints and training data from Hugging Face Hub.
 M	gear_sonic/camera/composed_camera.py	Composed camera server — orchestrates multiple camera drivers.
 M	gear_sonic/data/robot_model/instantiation/__init__.py	Robot model instantiation helpers (G1, X2 Ultra).
