@@ -264,6 +264,7 @@ models/
 !gear_sonic_deploy/models/x2_sonic_s1ft16000.manifest.txt
 !gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx.phi.json
 !gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx.provenance.json
+!/gear_sonic_deploy/models/kplanner_g1core_s1d_heads.pt
 
 # Downloaded from HuggingFace (hf download)
 sample_data/

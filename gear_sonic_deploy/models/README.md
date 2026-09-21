@@ -7,6 +7,9 @@ All four carry `codec_fingerprint native-3enc:52d8ca591e34a6a15f140c22aab957b8`:
 ## Shipped frozen G1-core set: `x2_sonic_s1ft16000` (F07)
 
 `x2_sonic_s1ft16000_g1.onnx` (pose graph, obs 1670), `x2_sonic_s1ft16000_g1_token.onnx` (token graph, obs 1670) and `x2_smpl_tokenizer_v11release.onnx` (the public G1 release's SMPL tokenizer, obs 840): the frozen NVIDIA G1 core with the X2 decoder LoRA folded in (`s1ft_it16000_merged.pt`, sha256 `f011417b...`). This is the set the robot ran on 2026-09-09 (six crouched walks, whole-body teleop) and is byte-identical to `tinkerbuggy/sonic-x2/demo_20260909/frozen_g1_s1ft16000/`. Pair with `trained_gains_s0.yaml`, `X2_PLANT=vendor_20260823`, the G1-core planner (HF `kplanner_g1core/`, see `MODELS.md`) and `gear_sonic/config/kplanner_profiles/g1core_bare_v1.env`; `x2_sonic_s1ft16000.manifest.txt` lists the md5s and `onnx_provenance.py check --pose ... --token ...` gates the pairing. The robot template for this lineage is `x2_pc2/robot_env.env.frozen.template`.
+## `kplanner_g1core_s1d_heads.pt`
+
+The S1 residual heads (338 KB) that turn the analytic G1-core planner wrap into the `s1d_a05_ws` graph the robot ran; input to `motionbricks/scripts/export_g1core_x2_planner_onnx.py --heads ... --mask-z --resid-scale 0.5` (docs/x2/F07, "G1-core planner graphs"). Trained on paired G1/X2 clips; retraining needs that corpus.
 
 ## Other sets (Hugging Face, public)
 

@@ -408,6 +408,14 @@ def _load_g1_core(device="cpu"):
     lib = _MB_ROOT / "out/G1-clip-turns-walkstart.ckpt"
     if not lib.exists():
         lib = _MB_ROOT / "out/G1-clip-turns.ckpt"
+    if not lib.exists():
+        raise SystemExit(
+            "no G1 clip library with turn modes under motionbricks/out/: the graph "
+            "routes turns to modes 15/16 and walk-start to 17. Build it from the "
+            "upstream out/G1-clip.ckpt with motionbricks/scripts/"
+            "build_g1_turn_clip_library.py (needs a G1 in-place-turn CSV pair, not "
+            "shipped) then build_g1_walkstart_clip_library.py (shipped tape). "
+            "See docs/x2/F07_frozen_g1_model.md, 'G1-core planner graphs'.")
     core = load_g1_planner(paths, device=device, clip_library_ckpt=lib)
     log.info("clip library: %s", lib.name)
     torch.backends.mha.set_fastpath_enabled(False)
