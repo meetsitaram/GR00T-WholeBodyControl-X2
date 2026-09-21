@@ -13,7 +13,9 @@ The first-party Pico chores set ships as the default corpus
 `MOTION_FILE` / `SMPL_MOTION_DIR` default points at it). For a real run bring
 your own motion-lib pkl (SOMA / GMR retargets, your Pico recordings; the
 corpus the shipped set was trained on came from an external G1-to-X2 retarget
-pipeline over the G1 motion corpus, neither of which is part of this repo) or start from the bank built by
+pipeline over the BONES-SEED G1 corpus, neither of which is part of this repo;
+see "Motion data and BONES-SEED" in [`README_X2.md`](../../README_X2.md) for the
+attribution and the steps to train on that dataset yourself) or start from the bank built by
 `tools/build_demo_bank_from_upstream.sh` (`gear_sonic/data/motions/x2_demo_bank.pkl`: the
 shipped X2 MC stock gestures; `--with-upstream-examples` adds the upstream G1 reference clips).
 

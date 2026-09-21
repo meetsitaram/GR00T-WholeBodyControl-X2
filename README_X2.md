@@ -44,6 +44,61 @@ to export it. No third-party motion data and no robot address ship here.
 | F11 | [Docker test image](docs/x2/F11_docker.md) |
 | F12 | [Training and finetuning on Nebius](docs/x2/F12_training_nebius.md) |
 
+## Motion data and BONES-SEED
+
+No BONES-SEED data ships in this repository. The motion data here is
+first-party (the Pico "chores" corpus with SMPL sidecars and tapes, recorded by
+the author) and the AgiBot MC stock gestures captured on the robot.
+
+The shipped models were nevertheless trained on motion derived from the
+**BONES-SEED** motion-capture dataset by **Bones Studio**, released alongside
+NVIDIA GEAR-SONIC ([huggingface.co/datasets/bones-studio/seed](https://huggingface.co/datasets/bones-studio/seed))
+and retargeted onto the X2 body. Use of that dataset, and of motions derived
+from it, is governed by the BONES-SEED license: obtain the dataset and its
+terms from the official release before using or redistributing such motions
+beyond what the license permits.
+
+### Training on BONES-SEED yourself
+
+1. Request access on the dataset page and accept its license. The release
+   contains human motion with Unitree G1 retargets (flat CSVs, 120 fps) and
+   SMPL-side motion for most clips.
+2. Retarget the clips onto the X2. The pipeline used for the shipped models
+   (a G1-to-X2 retarget over the dataset's G1 trajectories) is not part of
+   this repo; any retargeter that writes X2 joint CSVs works, and
+   `gear_sonic/scripts/x2_gmr_to_motion_lib.py` covers the GMR route.
+3. Convert to the motion-lib format the trainer reads:
+
+   ```bash
+   python gear_sonic/data_process/convert_soma_csv_to_motion_lib.py --robot x2_ultra \
+       --input /path/to/x2_ultra_csvs/ --output <out dir>/robot --fps 30 --fps_source 120 --individual --num_workers 16
+   ```
+
+4. Place the SMPL sidecars (one per clip, same keys) under a directory and
+   gate them: `python gear_sonic/scripts/check_smpl_sidecars.py <sidecar dir> --motion <corpus.pkl>`.
+   Every X2 config trains the SMPL encoder, so clips without a sidecar train
+   in pose mode only.
+5. Point the run at it: `MOTION_FILE=<corpus.pkl> SMPL_MOTION_DIR=<sidecar dir>`
+   for `run_smoke_8gpu.sh` / `launch_bigrun.sh` ([F12](docs/x2/F12_training_nebius.md)),
+   or `+exp=...` overrides of `motion_lib_cfg.motion_file` / `smpl_motion_file`.
+
+## How the X2 model compares to the stock G1 release
+
+Scored in Isaac Lab under the SONIC paper's criterion (a clip fails if the
+root or an end-effector height deviates by more than 0.25 m or the root
+orientation by more than 1 rad; MPJPE-L over the successful clips).
+
+| Set | Success (%) G1 stock | Success (%) X2 trained | MPJPE-L (mm) G1 stock | MPJPE-L (mm) X2 trained |
+|---|---|---|---|---|
+| novel500 (in-distribution) | 97.8 | 97.2 | 26.9 | 34.3 |
+| hard300 (in-distribution tail) | 89.0 | 73.3 | 35.3 | 41.5 |
+| PHUMA 1,931 (out-of-distribution) | 86.8 | 66.2 | 32.8 | 43.4 |
+| Pico captures via the SMPL encoder (27) | 40.7 | 66.7 | 40.4 | 42.4 |
+
+novel500 and hard300 are motion-library sets, PHUMA is the out-of-distribution
+benchmark, and the Pico row is our own VR teleop captures through the SMPL
+encoder. Details in the [technical report](https://sonic-agibot-x2.github.io/static/pdfs/sonic-agibot-x2-port.pdf).
+
 ## Where the X2 code lives
 
 Everything the port added is under a handful of directories. One line per

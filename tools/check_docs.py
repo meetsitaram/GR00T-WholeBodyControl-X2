@@ -43,7 +43,7 @@ EXTERNAL_PREFIXES = (
     "/home/run/", "/tmp/", "/sys/", "/mnt/", "http://", "https://", "tcp://", "git@",
 )
 FORBIDDEN = re.compile(
-    r"boneseed|bones_seed|bones-seed|stickbot|sitaram|tinkerbuggy(?!/sonic-x2)|meetsitaram|"
+    r"boneseed|bones_seed|stickbot|sitaram|tinkerbuggy(?!/sonic-x2)|meetsitaram|"
     r"192\.168\.|10\.0\.1\.|195\.242\.|89\.169\.|10\.11[02]\.|"
     r"x2_upgraded_demo|data_local/|docs/experiments",
     re.IGNORECASE,
