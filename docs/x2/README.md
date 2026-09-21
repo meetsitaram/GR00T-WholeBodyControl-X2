@@ -50,7 +50,10 @@ pip install -r requirements-x2.txt
 #    or, all of the above in one idempotent step (also builds the docker image with --with-docker):
 #    bash install_scripts/setup_x2.sh --skip-models
 
-# 3. public G1 release into the model cache ($SONIC_HOME, default ~/.cache/sonic)
+# 3. (optional) the public NVIDIA G1 release into the model cache ($SONIC_HOME, default ~/.cache/sonic).
+#    Not needed to RUN anything here: both shipped sets are self-contained. It is the frozen
+#    core the F07 export/finetune tools start from, and the standalone torch-checkpoint
+#    Pico path (run_x2_pico_wbc.sh with a frozen-core-smpl:<ckpt>:<release.pt> composite).
 pip install "huggingface_hub[cli]"
 python download_from_hf.py                 # G1 core + G1 planner -> $SONIC_HOME/g1
 

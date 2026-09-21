@@ -258,6 +258,12 @@ models/
 !/gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1_token.onnx
 !/gear_sonic_deploy/models/x2_sonic_v16ft8_45000_smpl_tokenizer.onnx
 !/gear_sonic_deploy/models/x2_sonic_v16ft8_45000.manifest.txt
+!gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx
+!gear_sonic_deploy/models/x2_sonic_s1ft16000_g1_token.onnx
+!gear_sonic_deploy/models/x2_smpl_tokenizer_v11release.onnx
+!gear_sonic_deploy/models/x2_sonic_s1ft16000.manifest.txt
+!gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx.phi.json
+!gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx.provenance.json
 
 # Downloaded from HuggingFace (hf download)
 sample_data/

@@ -29,6 +29,42 @@ that produced it is [`docs/x2/BUILD_CHAIN.md`](docs/x2/BUILD_CHAIN.md) A
 (`export_native_all.sh`). The kplanner planner graphs (`PLANNER_MODEL`) are
 **not** part of the shipped set; see the tables below.
 
+## Shipped frozen G1-core set (s1ft16000)
+
+The frozen-G1 lineage (F07) also ships, under `gear_sonic_deploy/models/`
+(git-lfs): the set the robot ran on 2026-09-09 and the same bytes as
+`tinkerbuggy/sonic-x2/demo_20260909/frozen_g1_s1ft16000/`. It is not the
+launcher default (that stays `v16ft8_45000`); select it explicitly:
+
+| File (`gear_sonic_deploy/models/`) | Kind | Obs dim | md5 (first 12) | Env var it fills |
+|---|---|---|---|---|
+| `x2_sonic_s1ft16000_g1.onnx` | pose graph (frozen G1 core + folded X2 LoRA) | 1670 | `5ae931344306` | `MODEL` (sim), `X2_RITUAL_MODEL` (robot) |
+| `x2_sonic_s1ft16000_g1_token.onnx` | token-input graph (whole-body teleop) | 1670 | `438a14fea884` | `SIMSTACK_TOKEN` (sim), `X2_WB_TOKEN_MODEL` (robot) |
+| `x2_smpl_tokenizer_v11release.onnx` | public G1 release SMPL tokenizer `smpl_obs[840] -> motion_token[64]` | 840 | `ee03f06e0211` | `SIMSTACK_TOKENIZER` (sim), `X2_WB_TOKENIZER` (robot) |
+
+Pair it with `trained_gains_s0.yaml`, `X2_PLANT=vendor_20260823`, the G1-core
+planner from HF `tinkerbuggy/sonic-x2/kplanner_g1core/` (`PLANNER_MODEL`, see the directory
+convention below) and `gear_sonic/config/kplanner_profiles/g1core_bare_v1.env`.
+`x2_pc2/robot_env.env.frozen.template` already points at these files. Sim:
+
+```bash
+ALLOW_MISMATCH=1 SIM_TUNING_YAML=gear_sonic_deploy/configs/real_deploy_tuning/trained_gains_s0.yaml \
+MODEL=gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx \
+SIMSTACK_TOKEN=gear_sonic_deploy/models/x2_sonic_s1ft16000_g1_token.onnx \
+SIMSTACK_TOKENIZER=gear_sonic_deploy/models/x2_smpl_tokenizer_v11release.onnx \
+PLANNER_MODEL=$X2_MODELS/kplanner_g1core \
+KPLANNER_PROFILE=gear_sonic/config/kplanner_profiles/g1core_bare_v1.env \
+./gear_sonic/scripts/sim_onnx_planner.sh --whole-body-teleop      # or without the flag: pad / planner only
+```
+
+## License of the shipped sets
+
+Licensed by NVIDIA Corporation under the NVIDIA Open Model License: both
+shipped sets are Derivative Models of the GEAR-SONIC release (Part 2 of
+[`LICENSE`](LICENSE), sections 2 and 3). Redistributing them, or a model you
+derive from them, requires a copy of that Agreement and the attribution notice
+above; see `gear_sonic_deploy/models/README.md`.
+
 ## Bring your own
 
 Any other X2 policy is bring-your-own. Every launcher resolves its models

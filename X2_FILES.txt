@@ -417,6 +417,12 @@ A	gear_sonic_deploy/docker_x2/docker-compose.yml	X2 Ultra MuJoCo-sim container f
 A	gear_sonic_deploy/docker_x2/enter_sim.sh	Build (idempotent) and drop into a shell inside the X2 sim container, with DDS isolated to loopback (ROS_LOCALHOST_ONLY=1, ROS_DOMAIN_ID=73 from docker-compose.yml).
 A	gear_sonic_deploy/docker_x2/get_x2_sonic_ready.sh	One-shot bring-up: build the X2 container in REAL-ROBOT mode AND run the deploy node in --dry-run, with operator-gated safety prompts the whole way.
 A	gear_sonic_deploy/models/README.md	Shipped default model set: `x2_sonic_v16ft8_45000` (native 3-encoder, dual-head) — The four ONNX graphs here (git-lfs) are the default the sim rituals (`sim_onnx_planner.sh --whole-body-teleop`, `simstack_local.sh`) and
+A	gear_sonic_deploy/models/x2_smpl_tokenizer_v11release.onnx	Public G1 release SMPL tokenizer (smpl_obs 840 -> motion token 64) exported to ONNX; pairs with the frozen G1-core set.
+A	gear_sonic_deploy/models/x2_sonic_s1ft16000.manifest.txt	md5 + provenance of the shipped frozen G1-core set.
+A	gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx	Shipped frozen G1-core pose graph (obs 1670; folded LoRA from s1ft_it16000_merged.pt); the set the robot ran 2026-09-09; MODEL / X2_RITUAL_MODEL for the F07 lineage.
+A	gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx.phi.json	Phi codec table sidecar of the frozen-core pose graph (written by frozen_core_t2_export.py).
+A	gear_sonic_deploy/models/x2_sonic_s1ft16000_g1.onnx.provenance.json	Export provenance sidecar of the frozen-core pose graph (checkpoint hash, exporter, flags).
+A	gear_sonic_deploy/models/x2_sonic_s1ft16000_g1_token.onnx	Shipped frozen G1-core token-input graph (obs 1670) for whole-body teleop; SIMSTACK_TOKEN / X2_WB_TOKEN_MODEL.
 A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000.manifest.txt	x2_sonic_v16ft8_45000 exported 2026-09-17T12:05:21Z from model_step_045000.pt (md5 52d8ca591e34a6a15f140c22aab957b8) at 531c906 shipped set: gear_sonic_deploy/models/ (the _smpl.onnx gate-only graph and the .pt are not s
 A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000_dual.onnx	Shipped ONNX policy graph (git-lfs).
 A	gear_sonic_deploy/models/x2_sonic_v16ft8_45000_g1.onnx	Shipped ONNX policy graph (git-lfs).

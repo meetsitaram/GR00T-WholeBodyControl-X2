@@ -16,7 +16,8 @@ corpus (`gear_sonic/data/motions/x2_pico_chores/`) as the default for smoke
 and training runs and the AgiBot MC stock gestures for the pad. Every other
 policy and planner graph is bring-your-own: earlier X2 sets are on Hugging
 Face (`tinkerbuggy/sonic-x2`), the public `nvidia/GEAR-SONIC` G1 release
-(`download_from_hf.py`) is the frozen core for finetuning, and
+(`download_from_hf.py`) is the frozen core the F07 export and finetune tools
+start from (not needed to run the shipped sets), and
 [`MODELS.md`](MODELS.md) lists every model variable, its file contract and how
 to export it. No third-party motion data and no robot address ship here.
 

@@ -1,0 +1,5 @@
+# x2_sonic_s1ft16000: frozen NVIDIA G1 core + X2 decoder LoRA (folded), exported from s1ft_it16000_merged.pt (sha256 f011417bc626...); the set the robot ran on 2026-09-09 (six crouched walks, whole-body teleop) and the HF demo_20260909/frozen_g1_s1ft16000 set (identical bytes).
+# pairs with: the G1-core planner (HF kplanner_g1core/x2_planner_template_s1d_a05_ws.onnx as x2_planner_template.onnx), tuning trained_gains_s0.yaml, kplanner profile g1core_bare_v1.env
+5ae9313443068d0fdebdb93480d23746  x2_sonic_s1ft16000_g1.onnx
+438a14fea8849b1feaa770e4e9de03c5  x2_sonic_s1ft16000_g1_token.onnx
+ee03f06e0211590ece8eff3185efba98  x2_smpl_tokenizer_v11release.onnx

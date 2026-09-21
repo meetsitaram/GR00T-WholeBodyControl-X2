@@ -45,6 +45,7 @@
 #
 #     policies/                          ONNX checkpoints: the SHIPPED default set
 #         x2_sonic_v16ft8_45000_{dual,g1,g1_token,smpl_tokenizer}.onnx
+#         x2_sonic_s1ft16000_{g1,g1_token}.onnx + x2_smpl_tokenizer_v11release.onnx (frozen G1-core set, F07)
 #                                        (gear_sonic_deploy/models/, git-lfs; staged by
 #                                        step 9 when no --model is given) or --model <file>
 #
@@ -893,6 +894,9 @@ SHIPPED_MODELS=(
     x2_sonic_v16ft8_45000_g1.onnx
     x2_sonic_v16ft8_45000_g1_token.onnx
     x2_sonic_v16ft8_45000_smpl_tokenizer.onnx
+    x2_sonic_s1ft16000_g1.onnx
+    x2_sonic_s1ft16000_g1_token.onnx
+    x2_smpl_tokenizer_v11release.onnx
 )
 if [[ "${SKIP_MODEL}" -eq 1 ]]; then
     skip "--skip-model"
