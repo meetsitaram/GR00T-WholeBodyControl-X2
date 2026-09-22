@@ -494,6 +494,7 @@ A	gear_sonic_deploy/thirdparty/aimdk_msgs/.gitignore	AgiBot SDK content is fetch
 A	gear_sonic_deploy/thirdparty/aimdk_msgs/README.md	aimdk_msgs (bring your own — from AgiBot's official SDK) — The deploy node and the docker sim image build against AgiBot's `aimdk_msgs
 A	install_scripts/install_quest3.sh	install_quest3.sh Sets up the gear_sonic_teleop venv for Quest 3 VR teleop.
 A	install_scripts/setup_x2.sh	setup_x2.sh — zero-friction setup for the X2 SONIC sim + deploy stacks.
+A	media/x2/x2_training_topology.png	ARCHITECTURE section 6 / F12: training topology diagram (Nebius 32-GPU cluster, shared filesystem, probe, workstation, robot).
 A	media/x2/x2_reference_to_real.gif	README hero: reference motion -> sim -> real X2 (from the project page video).
 A	media/x2/x2_vs_g1_gangnam.gif	README: Gangnam-style dance on the X2 (right) next to a stock-SONIC G1 (left).
 A	media/x2/x2_wholebody_teleop.gif	README: live whole-body Pico teleoperation on the X2.

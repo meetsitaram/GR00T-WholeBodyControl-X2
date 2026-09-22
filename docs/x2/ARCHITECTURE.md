@@ -107,6 +107,11 @@ training run therefore needs the SMPL sidecars next to the retargeted clips.
 
 ## 6. Training infrastructure (as used for the shipped sets)
 
+![X2 training topology: four 8 x H100 nodes on one InfiniBand fabric with node-local NVMe, a shared filesystem, a 1 x H100 eval probe, the workstation running the MuJoCo twin, and the X2 robot](../../media/x2/x2_training_topology.png)
+
+<details>
+<summary>Text version of the diagram</summary>
+
 ```mermaid
 flowchart LR
   subgraph nebius["Nebius cloud"]
@@ -135,6 +140,8 @@ flowchart LR
   pc2 -- "Pico tapes, black-box logs" --> ws
   ws -- "new corpus pieces + sidecars" --> share
 ```
+
+</details>
 
 Training reads 100k+ small files from 32 processes, so `stage_local.sh` copies
 the corpus to each node's NVMe before launch and only rank 0 writes

@@ -8,6 +8,10 @@ in `gear_sonic/scripts/cloud/` wrap node bootstrap, staging, smoke, multi-node
 launch and monitoring. This page is self-contained; the upstream training
 docs (`docs/source/user_guide/training.md`) cover the trainer itself.
 
+![X2 training topology](../../media/x2/x2_training_topology.png)
+
+The topology above is described in [`ARCHITECTURE.md`](ARCHITECTURE.md#6-training-infrastructure-as-used-for-the-shipped-sets).
+
 The first-party Pico chores set ships as the default corpus
 (`gear_sonic/data/motions/x2_pico_chores/`, 14 clips + SMPL sidecars; every
 `MOTION_FILE` / `SMPL_MOTION_DIR` default points at it). For a real run bring
