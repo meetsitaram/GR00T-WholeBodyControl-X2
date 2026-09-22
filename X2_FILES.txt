@@ -23,6 +23,7 @@ A	docs/x2/F10_real_robot_colcon.md	F10 — Real robot: PC2 bring-up, colcon buil
 A	docs/x2/F11_docker.md	F11 — Docker test image — `gear_sonic_deploy/docker_x2/` is a ROS 2 Humble + ONNX Runtime + MuJoCo
 A	docs/x2/F12_training_nebius.md	F12 — Training and finetuning on Nebius — Training uses the upstream SONIC trainer (`gear_sonic/train_agent_trl.py`,
 A	docs/x2/README.md	AgiBot X2 Ultra on GEAR-SONIC — runbook index — This directory documents the X2 feature set carried on this branch: gamepad
+A	docs/x2/TRAINING_NOTES.md	Public run history: lineages and GPU-hours of the shipped sets, the reward terms that differ from the SONIC paper and the A/B that would settle them, the traps that cost GPU-hours.
 A	docs/x2/gamepad_cheatsheet.md	X2 gamepad cheat sheet (demo pad, untethered) — Bindings come from two places and the sheet reflects their combination
 A	docs/x2/gamepad_control_map.html	X2 pad — control map
 A	gear_sonic/config/callbacks/finetune_rate_schedule.yaml	Anneal fine_tune_dataset.finetune_sample_rate without restarting the run.

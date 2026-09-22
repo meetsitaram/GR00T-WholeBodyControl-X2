@@ -17,6 +17,11 @@ pipeline over the G1 motion corpus, neither of which is part of this repo) or st
 `tools/build_demo_bank_from_upstream.sh` (`gear_sonic/data/motions/x2_demo_bank.pkl`: the
 shipped X2 MC stock gestures; `--with-upstream-examples` adds the upstream G1 reference clips).
 
+Before a real run, read [`TRAINING_NOTES.md`](TRAINING_NOTES.md): the
+lineages of the shipped sets, the reward terms that differ from the paper
+(and the A/B that would settle whether they cost tail performance), and the
+traps that cost the most GPU-hours.
+
 ## Prerequisites (local)
 
 - `python download_from_hf.py --training` (public G1 checkpoint + SMPL data

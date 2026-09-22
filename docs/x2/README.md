@@ -27,6 +27,7 @@ captured motion data and no robot-specific address ships with the repository.
 | F12 | [Training and finetuning on Nebius](F12_training_nebius.md) | provision, smoke, full run, resume, export |
 
 Reference pages: [`ARCHITECTURE.md`](ARCHITECTURE.md) (stack diagrams),
+[`TRAINING_NOTES.md`](TRAINING_NOTES.md) (run history, reward deviations, traps),
 [`BUILD_CHAIN.md`](BUILD_CHAIN.md) (what rebuilds when),
 [`gamepad_cheatsheet.md`](gamepad_cheatsheet.md), [`../../MODELS.md`](../../MODELS.md),
 [`../../x2_pc2/PORT_REGISTRY.md`](../../x2_pc2/PORT_REGISTRY.md) (every ZMQ port).
