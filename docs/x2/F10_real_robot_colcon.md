@@ -212,6 +212,44 @@ Tuning presets: `gear_sonic_deploy/configs/real_deploy_tuning/README.md`
 (`_schema.yaml`, `trained_gains_s0_inc_waistmc.yaml` (shipped default), `trained_gains_s0.yaml`, `bigrun.yaml`, `frozen_g1.yaml`,
 `walk_101.yaml`, `walking_recovery*.yaml`, `conservative.yaml`, `expressive.yaml`).
 
+## Fall recovery: assisted stand-up out of SAFE_HOLD
+
+Before 2026-09-22 a tilt trip was terminal: the deploy went to SAFE_HOLD
+(pure damping once the down-detect fired) and only a restart brought the
+policy back. The deploy now has a `RECOVER` state:
+
+1. **Gate.** In SAFE_HOLD, the IMU must read upright (`gravity_body[z] <
+   --recover-upright-cos`, default -0.95, about 18 deg) and the body must be
+   quiet (base |angular velocity| < 0.5 rad/s, every joint |qd| < 1.0 rad/s)
+   for `--recover-dwell-s` (2.0 s). That is what "someone is holding it up"
+   looks like; the legs can be anywhere between a crouch and standing.
+   Each arming and disarming of the gate is logged.
+2. **Phase A, stiffen in place** (`--recover-stiffen-s`, 1.5 s): the gains
+   ramp from whatever is latched (the pure-damping profile, or the stand-pose
+   hold of a false trip) to the deploy gains while the target stays at the
+   measured pose. No position step, no kp step.
+3. **Phase B, rise** (`--recover-standup-s` 4.0 s minimum, stretched so the
+   fastest joint moves at most `--recover-max-rate` 0.4 rad/s): the target
+   blends with a half-cosine from the measured pose to the stand pose
+   (`x2_stand_default_pose.yaml`, else the trained default angles).
+4. **Hand-off.** CONTROL re-entered exactly as from WAIT_FOR_CONTROL: soft-start
+   ramp from the measured pose, watchdogs reset, reference re-anchored.
+5. **Abort.** Any tilt past `--tilt-cos` during the stand-up, or stale state
+   for 0.5 s, drops straight back to SAFE_HOLD pure damping; the gate can
+   re-arm. `--no-safe-hold-recover` disables the path. `x2_debug` carries an
+   `in_recover` flag; `tick.csv` reasons are `recover_stiffen` / `recover_standup`.
+
+**Helper procedure on the robot (first trials on the gantry).** Lift the robot
+upright and hold it still with the feet on the ground and the knees bent.
+After 2 s the joints stiffen (1.5 s), then the legs straighten slowly (4 s or
+more). Keep supporting until it is standing and the policy is in control,
+then let go. If it tilts while rising it goes limp again at once. There is no
+audible cue yet (the deploy node has no TTS hook), so watch the log line
+`SAFE_HOLD -> RECOVER` in the ritual output.
+
+Sim rehearsal (verified 2026-09-22 with the shipped set): see
+[`F09_mujoco_sim.md`](F09_mujoco_sim.md), "Rehearsing a fall and the recovery".
+
 ## Troubleshooting
 
 | Symptom | Fix |

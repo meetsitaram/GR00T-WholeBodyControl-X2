@@ -46,7 +46,24 @@
  *                       commands. The 500 Hz writer is allowed to publish.
  *   SAFE_HOLD        : tilt watchdog tripped or fatal error. The 500 Hz
  *                       writer publishes "hold default angles, 4x damping"
- *                       indefinitely; operator must restart the binary.
+ *                       (or pure damping once the down-detect / e-stop
+ *                       carve-outs fire) until either the binary is
+ *                       restarted or the RECOVER gate below opens.
+ *   RECOVER          : assisted stand-up (2026-09-22). Entered from
+ *                       SAFE_HOLD once the IMU reads upright (grav_z <
+ *                       --recover-upright-cos) AND the body is quiet
+ *                       (base |w|, joint |qd| under bounds) for
+ *                       --recover-dwell-s: i.e. someone is holding the
+ *                       robot up, legs anywhere between crouch and stand.
+ *                       Phase A stiffens IN PLACE (gains ramp from the
+ *                       latched damping to deploy gains, target = measured
+ *                       pose); phase B blends the target to the stand pose
+ *                       at <= --recover-max-rate rad/s. Any tilt past
+ *                       --tilt-cos aborts back to SAFE_HOLD pure damping.
+ *                       Completion re-enters CONTROL exactly like a fresh
+ *                       WAIT_FOR_CONTROL start (soft-start ramp from the
+ *                       measured pose, watchdogs reset, reference re-anchored).
+ *                       --no-safe-hold-recover disables the path.
  *
  * ## CLI (selected)
  *
@@ -250,6 +267,21 @@ struct CliArgs {
   // for 300 ms on fresh IMU (robot genuinely down/going down). <= -1.0
   // disables (pre-2026-08-31 behaviour: stand-pose hold until e-stop).
   double      safe_hold_down_damp_cos = -0.25;
+  // SAFE_HOLD -> RECOVER assisted stand-up (2026-09-22). Gate: IMU upright
+  // (gravity_body[z] < recover_upright_cos; -1.0 = perfectly upright,
+  // -0.95 ~ 18 deg) AND quiet (base |ang vel| and every joint |qd| under
+  // the bounds) on fresh state for recover_dwell_s. Then gains ramp from
+  // the latched (damping) profile to deploy gains over recover_stiffen_s
+  // with the target pinned at the measured pose, and the target blends to
+  // the stand pose over max(recover_standup_s, max|delta| / recover_max_rate).
+  bool        safe_hold_recover       = true;
+  double      recover_upright_cos     = -0.95;
+  double      recover_dwell_s         = 2.0;
+  double      recover_max_base_angvel = 0.5;   // rad/s
+  double      recover_max_joint_vel   = 1.0;   // rad/s
+  double      recover_stiffen_s       = 1.5;
+  double      recover_standup_s       = 4.0;
+  double      recover_max_rate        = 0.4;   // rad/s of the fastest joint
   double      max_target_dev_arm   = -1.0;
   double      max_target_dev_head  = -1.0;
   // Per-group multiplicative trim on the trained PD spec (mirror of the
@@ -701,6 +733,16 @@ void PrintUsage()
       << "                             dry-run smoke tests.\n"
       << "  --dry-run                  publish stiffness=0/damping=0\n"
       << "  --tilt-cos COS             tilt watchdog threshold (default -0.3)\n"
+      << "  --no-safe-hold-recover     disable the SAFE_HOLD -> RECOVER assisted\n"
+      << "                             stand-up (default: enabled). RECOVER opens\n"
+      << "                             when the robot is HELD upright and still:\n"
+      << "  --recover-upright-cos COS  gravity_body[z] below this = upright (-0.95)\n"
+      << "  --recover-dwell-s SEC      upright+quiet dwell before recovering (2.0)\n"
+      << "  --recover-max-base-angvel W  quiet bound on base |ang vel| rad/s (0.5)\n"
+      << "  --recover-max-joint-vel QD quiet bound on joint |qd| rad/s (1.0)\n"
+      << "  --recover-stiffen-s SEC    phase A: gains damping -> deploy in place (1.5)\n"
+      << "  --recover-standup-s SEC    phase B: minimum stand-up duration (4.0)\n"
+      << "  --recover-max-rate RAD_S   phase B: cap on the fastest joint (0.4)\n"
       << "  --ramp-seconds SECONDS     soft-start ramp (default 2.0)\n"
       << "  --max-target-dev RAD       per-joint hard clamp on |target-default|,\n"
       << "                             in radians. Negative/omitted = disabled.\n"
@@ -1072,6 +1114,15 @@ CliArgs ParseCli(int argc, char** argv)
     else if (s == "--max-target-dev-waist") a.max_target_dev_waist = std::stod(next("--max-target-dev-waist"));
     else if (s == "--max-target-dev-waist-pitch") a.max_target_dev_waist_pitch = std::stod(next("--max-target-dev-waist-pitch"));
     else if (s == "--safe-hold-down-damp-cos") a.safe_hold_down_damp_cos = std::stod(next("--safe-hold-down-damp-cos"));
+    else if (s == "--no-safe-hold-recover")  a.safe_hold_recover = false;
+    else if (s == "--safe-hold-recover")     a.safe_hold_recover = true;
+    else if (s == "--recover-upright-cos")   a.recover_upright_cos = std::stod(next("--recover-upright-cos"));
+    else if (s == "--recover-dwell-s")       a.recover_dwell_s = std::stod(next("--recover-dwell-s"));
+    else if (s == "--recover-max-base-angvel") a.recover_max_base_angvel = std::stod(next("--recover-max-base-angvel"));
+    else if (s == "--recover-max-joint-vel") a.recover_max_joint_vel = std::stod(next("--recover-max-joint-vel"));
+    else if (s == "--recover-stiffen-s")     a.recover_stiffen_s = std::stod(next("--recover-stiffen-s"));
+    else if (s == "--recover-standup-s")     a.recover_standup_s = std::stod(next("--recover-standup-s"));
+    else if (s == "--recover-max-rate")      a.recover_max_rate = std::stod(next("--recover-max-rate"));
     else if (s == "--max-target-dev-arm")   a.max_target_dev_arm   = std::stod(next("--max-target-dev-arm"));
     else if (s == "--max-target-dev-head")  a.max_target_dev_head  = std::stod(next("--max-target-dev-head"));
     else if (s == "--kp-scale")             a.kp_scale          = std::stod(next("--kp-scale"));
@@ -1528,6 +1579,7 @@ class X2Deploy {
     RAMP_OUT,
     HOLD_FOR_MC,
     SAFE_HOLD,
+    RECOVER,      // ← assisted stand-up out of SAFE_HOLD (see header)
   };
 
   // ────────────────────────────────────────────────────────────────────
@@ -2691,8 +2743,126 @@ class X2Deploy {
                            "operator E-STOP honoured in SAFE_HOLD -> pure damping (%s)",
                            watchdog_.Reason().c_str());
             }
+            // ---- SAFE_HOLD -> RECOVER gate (assisted stand-up) ----------
+            // Someone has picked the robot up: IMU upright AND the body
+            // quiet, sustained. Works from the pure-damping profile (the
+            // legs are limp, the helper carries the weight) and from the
+            // stand-pose hold of a false trip alike; the gains ramp starts
+            // from whatever is latched, so there is never a kp step.
+            if (cli_.safe_hold_recover && fresh) {
+              const auto g_rc = body_frame_gravity_from_quat_wxyz(rs.base_quat_wxyz);
+              const double w_rc = std::sqrt(rs.base_ang_vel[0] * rs.base_ang_vel[0]
+                                            + rs.base_ang_vel[1] * rs.base_ang_vel[1]
+                                            + rs.base_ang_vel[2] * rs.base_ang_vel[2]);
+              double qd_rc = 0.0;
+              for (std::size_t i = 0; i < NUM_DOFS; ++i)
+                qd_rc = std::max(qd_rc, std::abs(rs.joint_vel_mj[i]));
+              const bool upright_rc = g_rc[2] < cli_.recover_upright_cos;
+              const bool quiet_rc   = (w_rc < cli_.recover_max_base_angvel)
+                                      && (qd_rc < cli_.recover_max_joint_vel);
+              if (upright_rc && quiet_rc) {
+                if (recover_upright_since_s_ < 0.0) {
+                  recover_upright_since_s_ = now;
+                  RCLCPP_WARN(node_->get_logger(),
+                              "SAFE_HOLD: robot reads upright (grav_z %.3f) and quiet "
+                              "(|w| %.2f rad/s, max|qd| %.2f rad/s) -> RECOVER in %.1f s if it stays so",
+                              g_rc[2], w_rc, qd_rc, cli_.recover_dwell_s);
+                }
+                if (now - recover_upright_since_s_ >= cli_.recover_dwell_s) {
+                  EnterRecover(now, rs);
+                }
+              } else if (recover_upright_since_s_ >= 0.0) {
+                recover_upright_since_s_ = -1.0;
+              }
+            }
             return;
           }
+      case State::RECOVER: {
+        // Assisted stand-up. Abort to SAFE_HOLD pure damping the moment the
+        // body tilts past the trip threshold (the helper let go, or the
+        // stand-up is failing); stale state for > 0.5 s aborts as well.
+        const auto g_rv = fresh ? body_frame_gravity_from_quat_wxyz(rs.base_quat_wxyz)
+                                : std::array<double, 3>{0.0, 0.0, -1.0};
+        const bool tilted_rv = fresh && (g_rv[2] > watchdog_.FallCos());
+        if (tilted_rv || (!fresh && stale_state_ticks_ > 25)) {
+          SafeCommand dc;
+          BuildPureDampingCommand(dc, default_angles);
+          dc.dry_run    = cli_.dry_run;
+          dc.tilt_trip  = true;
+          dc.ramp_alpha = 0.0;
+          dc.reason     = tilted_rv ? "RECOVER aborted: tilt past threshold -> PURE-DAMPING"
+                                    : "RECOVER aborted: state stale -> PURE-DAMPING";
+          if (cli_.dry_run) {
+            for (std::size_t i = 0; i < NUM_DOFS; ++i) {
+              dc.stiffness_mj[i] = 0.0;
+              dc.damping_mj[i]   = 0.0;
+            }
+          }
+          {
+            std::lock_guard<std::mutex> lk(latest_cmd_mutex_);
+            latest_cmd_ = dc;
+          }
+          latest_cmd_ready_.store(true, std::memory_order_release);
+          safe_hold_damped_        = true;
+          safe_hold_down_since_s_  = -1.0;
+          recover_upright_since_s_ = -1.0;
+          RCLCPP_FATAL(node_->get_logger(), "%s (grav_z %.3f, %.1f s into the stand-up) -> SAFE_HOLD",
+                       dc.reason.c_str(), g_rv[2], now - recover_entry_s_);
+          recorder_.Trigger("recover_abort");
+          state_.store(State::SAFE_HOLD);
+          return;
+        }
+        const double A  = std::max(cli_.recover_stiffen_s, 1e-3);
+        const double B  = std::max(recover_standup_total_s_, 1e-3);
+        const double t  = now - recover_entry_s_;
+        const double ga = std::clamp(t / A, 0.0, 1.0);
+        const double pl = std::clamp((t - A) / B, 0.0, 1.0);
+        const double pa = 0.5 - 0.5 * std::cos(pl * 3.14159265358979323846);  // half-cosine ease
+        SafeCommand sc;
+        for (std::size_t i = 0; i < NUM_DOFS; ++i) {
+          sc.target_pos_mj[i] = (1.0 - pa) * recover_start_pos_[i] + pa * stand_pose_target_[i];
+          sc.stiffness_mj[i]  = cli_.dry_run ? 0.0 : ((1.0 - ga) * recover_kp_start_[i] + ga * kps_scaled_[i]);
+          sc.damping_mj[i]    = cli_.dry_run ? 0.0 : ((1.0 - ga) * recover_kd_start_[i] + ga * kds_scaled_[i]);
+        }
+        sc.dry_run    = cli_.dry_run;
+        sc.tilt_trip  = false;
+        sc.ramp_alpha = pa;           // tick.csv: 0 = stiffening in place, 1 = at the stand pose
+        sc.reason     = (t < A) ? "recover_stiffen" : "recover_standup";
+        {
+          std::lock_guard<std::mutex> lk(latest_cmd_mutex_);
+          latest_cmd_ = sc;
+        }
+        latest_cmd_ready_.store(true, std::memory_order_release);
+        logger_.Log(now, rs.joint_pos_mj, rs.joint_vel_mj,
+                    rs.base_quat_wxyz, rs.base_ang_vel,
+                    last_action_il_, sc);
+        if (zmq_debug_pub_) {
+          PublishDebugFrame(now, rs, last_action_il_, sc, /*policy_time=*/now);
+        }
+        if (pl >= 1.0) {
+          // Hand back to the policy exactly like WAIT_FOR_CONTROL -> CONTROL:
+          // soft-start ramp from the measured pose, watchdogs reset, LPF
+          // re-seeded, reference re-anchored to the current heading.
+          if (fresh) ramp_.Reset(rs.joint_pos_mj); else ramp_.Reset();
+          watchdog_.Reset();
+          prop_buf_.Reset();
+          last_action_il_.fill(0.0);
+          target_lpf_initialized_ = false;
+          pose_ref_watchdog_.ClearTrip();
+          safe_hold_damped_        = false;
+          safe_hold_down_since_s_  = -1.0;
+          recover_upright_since_s_ = -1.0;
+          if (fresh && ref_motion_) ref_motion_->Anchor(rs.base_quat_wxyz);
+          control_entry_s_ = now;
+          RCLCPP_WARN(node_->get_logger(),
+                      "RECOVER complete (%.1f s: stiffen %.1f s + stand-up %.1f s, attempt #%d) "
+                      "-> CONTROL with a fresh soft-start ramp from the measured pose",
+                      t, A, B, recover_count_);
+          recorder_.Trigger("recover_done");
+          state_.store(State::CONTROL);
+        }
+        return;
+      }
       case State::SAFE_IDLE: {
         // Recoverable starvation hold (split-topology safety). Writer
         // keeps publishing the latched safe_idle_cmd_ (default_angles
@@ -3857,6 +4027,34 @@ class X2Deploy {
 
   // ─── HOLD_FOR_MC support ────────────────────────────────────────────
   // RAMP_OUT calls EnterHoldForMc() once the lerp completes.
+  // SAFE_HOLD -> RECOVER: snapshot the measured pose and the LATCHED gains
+  // (pure damping, or the stand-pose hold profile) as the ramp start, size
+  // phase B by the largest joint travel to the stand pose, and go.
+  void EnterRecover(double now, const RobotState& rs) {
+    recover_start_pos_ = rs.joint_pos_mj;
+    {
+      std::lock_guard<std::mutex> lk(latest_cmd_mutex_);
+      recover_kp_start_ = latest_cmd_.stiffness_mj;
+      recover_kd_start_ = latest_cmd_.damping_mj;
+    }
+    double max_delta = 0.0;
+    for (std::size_t i = 0; i < NUM_DOFS; ++i)
+      max_delta = std::max(max_delta, std::abs(stand_pose_target_[i] - recover_start_pos_[i]));
+    recover_standup_total_s_ = std::max(cli_.recover_standup_s,
+                                        max_delta / std::max(cli_.recover_max_rate, 1e-3));
+    recover_entry_s_         = now;
+    recover_upright_since_s_ = -1.0;
+    ++recover_count_;
+    RCLCPP_WARN(node_->get_logger(),
+                "SAFE_HOLD -> RECOVER (attempt #%d): upright and quiet for %.1f s. Phase A stiffens in "
+                "place over %.1f s, phase B rises to the stand pose over %.1f s (largest joint travel "
+                "%.2f rad at <= %.2f rad/s). Tilt past %.2f aborts to pure damping.",
+                recover_count_, cli_.recover_dwell_s, cli_.recover_stiffen_s,
+                recover_standup_total_s_, max_delta, cli_.recover_max_rate, watchdog_.FallCos());
+    recorder_.Trigger("recover_start");
+    state_.store(State::RECOVER);
+  }
+
   void EnterHoldForMc(double now)
   {
     hold_for_mc_entry_s_ = now;
@@ -4064,6 +4262,14 @@ class X2Deploy {
   // writer and a single FATAL line in the log.
   bool                              safe_hold_damped_ = false;
   double                            safe_hold_down_since_s_ = -1.0;  // SAFE_HOLD down-detect dwell start
+  // SAFE_HOLD -> RECOVER assisted stand-up state.
+  double                            recover_upright_since_s_ = -1.0;  // gate dwell start
+  double                            recover_entry_s_         = -1.0;
+  double                            recover_standup_total_s_ = 4.0;   // phase B length for this attempt
+  std::array<double, NUM_DOFS>      recover_start_pos_{};
+  std::array<double, NUM_DOFS>      recover_kp_start_{};
+  std::array<double, NUM_DOFS>      recover_kd_start_{};
+  int                               recover_count_ = 0;
   double                            control_entry_s_     = -1.0;
   double                            autostart_target_s_  = -1.0;
   std::uint64_t                     control_tick_        = 0;
@@ -4254,6 +4460,8 @@ uint64_t head_bypass_tick_count_ = 0;
     }
     std::uint8_t in_safe_idle =
         (state_.load() == State::SAFE_IDLE) ? 1 : 0;
+    std::uint8_t in_recover =
+        (state_.load() == State::RECOVER) ? 1 : 0;
     std::uint8_t pose_ref_starved =
         (pose_ref_watchdog_active_ && pose_ref_watchdog_.Tripped()) ? 1 : 0;
     // Resume chord telemetry: age in seconds since most recent press
@@ -4298,6 +4506,7 @@ uint64_t head_bypass_tick_count_ = 0;
     fields.push_back({"pose_ref_age_s",  "f64", {1}, &pose_ref_age_s,  sizeof(double)});
     fields.push_back({"pose_ref_starved","u8",  {1}, &pose_ref_starved,sizeof(std::uint8_t)});
     fields.push_back({"in_safe_idle",    "u8",  {1}, &in_safe_idle,    sizeof(std::uint8_t)});
+    fields.push_back({"in_recover",      "u8",  {1}, &in_recover,      sizeof(std::uint8_t)});
     fields.push_back({"resume_age_s",    "f64", {1}, &resume_age_s,    sizeof(double)});
     fields.push_back({"resume_total",    "i64", {1}, &resume_total,    sizeof(int64_t)});
     fields.push_back({"mc_action_mode",  "i32", {1}, &mc_action_mode,  sizeof(int32_t)});

@@ -118,6 +118,29 @@ goes near the robot. Isaac Lab numbers alone never qualify a model.
     --motion gear_sonic_deploy/data/motions_x2m2/demo_bank/<clip>.x2m2 --sim-viewer --autostart-after 5
 ```
 
+## Rehearsing a fall and the recovery
+
+The bridge can shove the robot over (`--tilt-torque`, a hand-tilt probe on the
+torso) and its elastic band can play the helper that holds it up. Launch with
+the band available but released and one shove scheduled at sim t = 30 s:
+
+```bash
+SIMSTACK_SIM_FLAGS="--sim-init-pose stand-settled --sim-band-release-after-s 0" \
+SIM_BRIDGE_EXTRA="--tilt-torque 200 --tilt-start 30 --tilt-ramp 1.5 --tilt-hold 3 --tilt-release 0.1 --tilt-rest 100000" \
+./gear_sonic/scripts/simstack_local.sh
+# after "tilt watchdog tripped ... -> SAFE_HOLD" and the down-detect in deploy.log:
+python gear_sonic/scripts/simstack_hold_up.py on -0.45     # hold the pelvis at 0.55 m, knees bent
+# deploy.log: "SAFE_HOLD -> RECOVER", then "RECOVER complete ... -> CONTROL"
+python gear_sonic/scripts/simstack_hold_up.py on -0.33     # ease up to stand height
+python gear_sonic/scripts/simstack_hold_up.py off          # let go; the policy stands on its own
+```
+
+The band's orientation PD spins a fallen body upright before it lifts it;
+a person would not do that, so ignore the spin. Verified 2026-09-22 on the
+shipped set: gate armed once upright and quiet, stiffen 1.5 s, stand-up
+8.7 s (one joint had 3.5 rad to travel), CONTROL re-entered, no trip after
+release, and a scripted walk ran cleanly afterwards.
+
 ## Troubleshooting
 
 | Symptom | Fix |
