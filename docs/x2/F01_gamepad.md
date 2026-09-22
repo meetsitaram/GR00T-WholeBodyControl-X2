@@ -33,6 +33,30 @@ KPLANNER_PROFILE=gear_sonic/config/kplanner_profiles/bigrun_teleop_v1.env \
 profile's locked speed / turn rate (the profile uses the `:=` idiom, so an
 exported env var wins).
 
+**How steering works while walking.** The right stick's X axis is
+continuous (since 2026-09-22): past the pad bridge's 0.15 deadzone the turn
+rate scales linearly from 25 % of the full rate to the full rate at full
+deflection (`KPLANNER_YAW_PROP_MIN`, `KPLANNER_YAW_STICK_DEADZONE`), for
+walking arcs (`KPLANNER_FIXED_ARC_TURN_RAD_S` 0.70 rad/s, scaled with the
+speed trim up to `KPLANNER_ARC_TURN_MAX_RAD_S` 1.2 so the radius stays
+constant) and in-place turns (`KPLANNER_FIXED_TURN_RAD_S` 0.55) alike.
+`KPLANNER_YAW_PROPORTIONAL=0` restores the old bang-bang behaviour, where any
+deflection commanded the full rate and a slight turn was only possible by
+tapping. Measured in sim (frozen-core set, 0.35 m/s setpoint, 6 s of stick):
+
+| stick X | walking: heading change, speed held | in place |
+|---|---|---|
+| 0.2 | 61 deg, 0.38 m/s | 56 deg |
+| 0.35 | 77 deg, 0.41 m/s | |
+| 0.5 | 88 deg, 0.48 m/s | 109 deg |
+| 0.75 | 105 deg, 0.40 m/s | |
+| 1.0 | 190 deg, 0.51 m/s | 195 deg |
+
+No trips at any rate; the bang-bang mode gave about 170 deg for every
+deflection. About 70 % of the commanded rate is delivered on the frozen-core
+set. At the 1.0 m/s setpoint an arc at stick 0.5 tipped the robot: keep arcs
+to the default speed.
+
 Expected output:
 
 - `[profile] gear_sonic/config/kplanner_profiles/bigrun_teleop_v1.env (md5 ...)`

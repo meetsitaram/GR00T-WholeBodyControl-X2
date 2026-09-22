@@ -396,6 +396,17 @@ _ARC_FWD_BOOST: float = float(
 # in-place turn rate the gait was tuned for.
 _ARC_TURN_TRACKS_SPEED: bool = os.environ.get("KPLANNER_ARC_TURN_TRACKS_SPEED", "1") == "1"
 _ARC_TURN_MAX_RAD_S: float = float(os.environ.get("KPLANNER_ARC_TURN_MAX_RAD_S") or 1.2)
+# Continuous yaw stick (2026-09-22, default ON; KPLANNER_YAW_PROPORTIONAL=0
+# restores the fixed turn). The resolver used to be bang-bang on yaw: any
+# deflection past the pad bridge's 0.15 deadzone commanded the FULL turn rate,
+# so a slight turn was only possible by tapping (sim, frozen core at 0.35 m/s:
+# stick 0.2 / 0.5 / 1.0 all -> -0.70 rad/s commanded, ~170 deg in 6 s
+# executed). Now the deadzone is remapped to zero and the rate scales
+# linearly from KPLANNER_YAW_PROP_MIN x full at the deadzone edge to the full
+# rate at full deflection (walking arcs and in-place turns alike).
+_YAW_PROPORTIONAL: bool = os.environ.get("KPLANNER_YAW_PROPORTIONAL", "1") == "1"
+_YAW_STICK_DEADZONE: float = float(os.environ.get("KPLANNER_YAW_STICK_DEADZONE") or 0.15)
+_YAW_PROP_MIN: float = float(os.environ.get("KPLANNER_YAW_PROP_MIN") or 0.25)
 _FWD_LATERAL_DEADBAND: float = 0.35
 
 # Strafe gating (2026-07-18). The resolver below is a SIGN function: any
@@ -625,6 +636,10 @@ def _resolve_locomotion_continuous(
         # capped at KPLANNER_ARC_TURN_MAX_RAD_S.
         turn_mag = min(_ARC_TURN_MAX_RAD_S,
                        turn_mag * max(1.0, vel_z / _DEFAULT_SPEED_SETPOINT))
+    if _YAW_PROPORTIONAL and shaped_yaw != 0.0:
+        # deadzone edge -> floor x full, full deflection -> full rate
+        u = (min(1.0, abs(shaped_yaw)) - _YAW_STICK_DEADZONE) / max(1e-6, 1.0 - _YAW_STICK_DEADZONE)
+        turn_mag *= _YAW_PROP_MIN + (1.0 - _YAW_PROP_MIN) * max(0.0, u)
     if shaped_yaw > 0.0:
         yaw_rate = -turn_mag              # stick right -> turn-right -> -yaw
     elif shaped_yaw < 0.0:
