@@ -27,6 +27,7 @@ to export it. No third-party motion data and no robot address ship here.
 - [`MODELS.md`](MODELS.md) — model variables (`MODEL`, `SIMSTACK_*`, `PLANNER_MODEL`, `X2_RITUAL_*`, `SONIC_HOME`, `CKPT_ROOT`).
 - [`docs/x2/ARCHITECTURE.md`](docs/x2/ARCHITECTURE.md) — stack diagrams: pose chain, sim launchers, PC2 bring-up, build chain, training loop.
 - [`docs/x2/BUILD_CHAIN.md`](docs/x2/BUILD_CHAIN.md) — what to rebuild when a model, clip, C++ file or script changes.
+- [`docs/x2/TRAINING_NOTES.md`](docs/x2/TRAINING_NOTES.md) — run history of the shipped sets, reward terms that differ from the paper, traps.
 
 ## Runbooks
 
