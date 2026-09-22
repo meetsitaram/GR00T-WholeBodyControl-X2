@@ -104,3 +104,49 @@ flowchart LR
 Three encoders train together on the same corpus: the G1 pose encoder, the
 teleop encoder and the SMPL encoder (`sonic_x2_ultra.yaml`); every smoke and
 training run therefore needs the SMPL sidecars next to the retargeted clips.
+
+## 6. Training infrastructure (as used for the shipped sets)
+
+![X2 training topology: four 8 x H100 nodes on one InfiniBand fabric with node-local NVMe, a shared filesystem, a 1 x H100 eval probe, the workstation running the MuJoCo twin, and the X2 robot](../../media/x2/x2_training_topology.png)
+
+<details>
+<summary>Text version of the diagram</summary>
+
+```mermaid
+flowchart LR
+  subgraph nebius["Nebius cloud"]
+    direction LR
+    subgraph cluster["Training cluster: 4 x 8 H100 = 32 GPUs (accelerate, rank 0 = rendezvous)"]
+      direction TB
+      n0["node 0<br/>8 x H100, NVMe: corpus + sidecars + run dir"]
+      n1["node 1<br/>8 x H100, NVMe: corpus + sidecars"]
+      n2["node 2<br/>8 x H100, NVMe"]
+      n3["node 3<br/>8 x H100, NVMe"]
+      n0 --- n1 --- n2 --- n3
+    end
+    share[("Shared filesystem<br/>corpus + SMPL sidecars (source of truth)<br/>checkpoints every 10 min, launch records")]
+    probe["Probe: 1 x H100<br/>Isaac Lab milestone evals"]
+  end
+  subgraph lab["Lab"]
+    ws["Workstation<br/>export chain -> ONNX<br/>MuJoCo sim stack (deploy binary in docker)"]
+    pc2["AgiBot X2 Ultra<br/>PC2 runs the same deploy node"]
+  end
+  share -- "stage_local.sh -> node-local NVMe" --> n0
+  n0 -- "rank-0 checkpoints, rsync 10 min" --> share
+  share -- "milestones" --> probe
+  probe -- "eval results" --> share
+  share -- "milestone .pt + config.yaml" --> ws
+  ws -- "push_to_pc2.sh (ONNX + env, md5 gates)" --> pc2
+  pc2 -- "Pico tapes, black-box logs" --> ws
+  ws -- "new corpus pieces + sidecars" --> share
+```
+
+</details>
+
+Training reads 100k+ small files from 32 processes, so `stage_local.sh` copies
+the corpus to each node's NVMe before launch and only rank 0 writes
+checkpoints, rsynced to the share every 10 minutes. The probe scores each
+milestone without touching the training nodes; the workstation qualifies an
+exported set in the deploy-faithful MuJoCo stack before `push_to_pc2.sh` puts
+it on the robot. See [`F12_training_nebius.md`](F12_training_nebius.md) and
+[`TRAINING_NOTES.md`](TRAINING_NOTES.md).
