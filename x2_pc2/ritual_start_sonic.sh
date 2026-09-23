@@ -127,9 +127,20 @@ echo "$(date +%F_%T) GATE PASSED" >> $LOG
 # the operator could see. The log now reports what actually happened instead
 # of always "STARTED".
 if tmux has-session -t x2_deploy 2>/dev/null; then
-    if tmux capture-pane -p -t x2_deploy -S -200 2>/dev/null | grep -q "cmd exited with status="; then
+    PANE="$(tmux capture-pane -p -t x2_deploy -S -400 2>/dev/null)"
+    if echo "$PANE" | grep -q "cmd exited with status="; then
         tmux kill-session -t x2_deploy 2>/dev/null
         echo "$(date +%F_%T) x2_deploy: cleared post-mortem pane" >> $LOG
+        tmux new-session -d -s x2_deploy "bash /home/run/gear-sonic/start_x2_deploy_ritual.sh"
+        echo "$(date +%F_%T) x2_deploy: STARTED" >> $LOG
+    elif echo "$PANE" | grep -q "stopping MC via PC1 EM HTTP API" \
+         && ! echo "$PANE" | grep -q "start-trigger sentinel touched"; then
+        # Stuck in the MC handoff (2026-09-23: with no PC1 address the
+        # `aima em stop-app mc` fallback hung forever). The deploy is still
+        # in STANDBY with its writer suppressed and MC owns the bus, so
+        # sweeping it is safe; the chord then launches a fresh deploy.
+        tmux kill-session -t x2_deploy 2>/dev/null
+        echo "$(date +%F_%T) x2_deploy: cleared stuck MC handoff (never took the bus)" >> $LOG
         tmux new-session -d -s x2_deploy "bash /home/run/gear-sonic/start_x2_deploy_ritual.sh"
         echo "$(date +%F_%T) x2_deploy: STARTED" >> $LOG
     else
