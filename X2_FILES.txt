@@ -296,6 +296,7 @@ A	gear_sonic/scripts/run_x2_pkl_direct_stack.sh	X2 direct PKL-to-SONIC stack run
 A	gear_sonic/scripts/run_x2_quest3_planner_stack.sh	X2 Quest 3 planner-driven teleop / record stack runner (Phase 0).
 A	gear_sonic/scripts/sim_mirror_viewer.py	Host-side mirror viewer for the docker sim stack — stall-proof by design.
 A	gear_sonic/scripts/sim_onnx_planner.sh	Standard SIM launch, gated against the robot: ONNX planner + MuJoCo sim + local gamepad.
+A	gear_sonic/scripts/simstack_hold_up.py	Sim-only helper: drives the MuJoCo bridge elastic band (on/off, length) through the scene_reset hook to play the person holding a fallen robot up for the RECOVER rehearsal.
 A	gear_sonic/scripts/simstack_local.sh	§24 FULL-LOOP SIM on the WORKSTATION -- the PC twin of the robot's simtest/run_simstack.sh, so a PC-vs-Jetson trace diff compares the same topology rather than two different rigs.
 A	gear_sonic/scripts/simstack_pad_drive.py	Scripted gamepad on the planner_cmd wire (walk / crouch walk / idle) for the local sim stack; same payload and cadence as pad_locomotion_bridge.py.
 A	gear_sonic/scripts/simstack_replay_tape.py	Replay a kplanner intent tape into the LIVE local sim stack (gear_sonic/scripts/simstack_local.sh).

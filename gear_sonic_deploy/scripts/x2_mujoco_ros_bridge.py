@@ -1614,8 +1614,12 @@ class X2MujocoRosBridge:
         drain (see :meth:`_apply_scene_reset`) so the cube doesn't
         teleport with an instantaneous (q_new - q_old)/dt velocity.
         """
-        if not self._scene_freejoint_qadr and not self._scene_welded_bid:
-            return  # nothing to reset
+        # The SUB is always created (unless --no-scene-zmq): besides scene
+        # objects, a scene_reset payload may carry sim-only test hooks
+        # (``band_enable`` / ``band_length`` for the elastic band, used to
+        # rehearse the deploy's SAFE_HOLD -> RECOVER assisted stand-up).
+        if getattr(self.args, "no_scene_zmq", False):
+            return
         if not self._ensure_pyzmq_in_container(purpose="scene_reset SUB"):
             self.node.get_logger().warn(
                 "[bridge] scene_reset SUB: pyzmq install failed; recorder "
@@ -1717,6 +1721,19 @@ class X2MujocoRosBridge:
         body_pos = payload.get("mutable_body_pos", {})
 
         import mujoco as _mujoco
+
+        # Sim-only test hooks: elastic band on/off and length ("someone
+        # holds the robot up" for the deploy's RECOVER rehearsal).
+        if self.elastic_band is not None:
+            if "band_length" in payload:
+                self.elastic_band.length = float(payload["band_length"])
+                print(f"[bridge] scene_reset: band length -> {self.elastic_band.length:.2f} m", flush=True)
+            if "band_enable" in payload:
+                self.elastic_band.enable = bool(payload["band_enable"])
+                if self.elastic_band.enable:
+                    # an explicit re-engage wins over --band-release-after-s
+                    self.args.band_release_after_s = -1.0
+                print(f"[bridge] scene_reset: ElasticBand enable -> {self.elastic_band.enable}", flush=True)
 
         for jname, qpos in freejoint_qpos.items():
             qadr = self._scene_freejoint_qadr.get(jname)
@@ -2327,6 +2344,11 @@ class X2MujocoRosBridge:
                     "failed (recorder will see frozen objects).",
                     file=sys.stderr,
                 )
+
+        # The scene_reset SUB runs whenever ZMQ is allowed, scene objects or
+        # not: its payload also carries the sim-only elastic-band hooks used
+        # to rehearse the deploy's SAFE_HOLD -> RECOVER assisted stand-up.
+        if not self.args.no_scene_zmq:
             scene_reset_thread = threading.Thread(
                 target=self._scene_reset_zmq_thread,
                 name="x2-scene-reset-zmq",

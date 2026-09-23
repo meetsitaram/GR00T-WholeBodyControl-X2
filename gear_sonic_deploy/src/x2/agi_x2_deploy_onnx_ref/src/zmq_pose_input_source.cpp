@@ -218,9 +218,15 @@ void ZmqPoseInputSource::HandleDecoded(
     const auto& b = buffers[i];
 
     if (f.name == "estop") {
-      // Operator e-stop (2026-08-04): latch permanently; the control loop
-      // polls EstopRequested() and slams stage-2 pure damping.
-      estop_requested_.store(true, std::memory_order_release);
+      // Operator e-stop (2026-08-04): latch; the control loop polls
+      // EstopRequested() and slams stage-2 pure damping. 2026-09-23: the
+      // planner lowers it with an EXPLICIT 0 after the operator repeats the
+      // full gesture (>= 5 s later, fresh chord); an ABSENT field never
+      // clears it, so a wire flap cannot lift an e-stop. The SAFE_HOLD ->
+      // RECOVER gate is vetoed while it is set.
+      double v = 1.0;
+      if (!CopyFloat32IntoDouble(f, b, &v, 1)) v = 1.0;
+      estop_requested_.store(v >= 0.5, std::memory_order_release);
     } else if (f.name == "joint_pos_mj") {
       if (CopyFloat32IntoDouble(f, b, next_frame.joint_pos_mj.data(), NUM_DOFS)) {
         got_body = true;
