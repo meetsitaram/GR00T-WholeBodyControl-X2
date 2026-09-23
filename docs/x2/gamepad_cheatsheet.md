@@ -18,7 +18,7 @@ Triangle=Y). A printable map is `gamepad_control_map.html` in this directory.
 ## Driving (DEADMAN = hold **L2 only**, `PAD_DEADMAN=left`; one-handed, the right hand spots the robot)
 | action | input |
 |---|---|
-| Walk / steer | left stick while holding L2; right stick X = yaw while walking |
+| Walk / steer | left stick while holding L2; right stick X = yaw while walking. Yaw is **continuous**: 25 % of the arc rate at the deadzone edge, full at full deflection (`KPLANNER_YAW_PROPORTIONAL=0` = old fixed turn; F01) |
 | Speed | **fixed** (`PAD_LOCK_SPEED=1`): launch value from `KPLANNER_FIXED_FWD_MPS` in the profile. No in-drive nudges (unset `PAD_LOCK_SPEED` to re-enable L1/R1 -0.1/+0.1) |
 | Obstacle guard (if armed) | inside 1.6 m fwd/lat gets clamped and **latches**; yaw always works — turn away, then **release + re-hold L2** to reset |
 | Stop walking | release L2 (robot idles) |
