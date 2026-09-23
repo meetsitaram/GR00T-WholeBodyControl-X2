@@ -301,7 +301,9 @@ class ZmqPoseInputSource : public ReferenceMotion {
   /// Operator e-stop flag carried on the pose wire (2026-08-04): the
   /// planner latches an ``estop`` field into every payload after an
   /// operator e-stop gesture; the control loop polls this and slams
-  /// stage-2 pure damping. Latching (never cleared by the wire).
+  /// stage-2 pure damping. Latched until the planner sends an explicit
+  /// ``estop = 0`` (operator repeated the full gesture >= 5 s later); an
+  /// absent field never clears it.
   bool EstopRequested() const {
     return estop_requested_.load(std::memory_order_acquire);
   }

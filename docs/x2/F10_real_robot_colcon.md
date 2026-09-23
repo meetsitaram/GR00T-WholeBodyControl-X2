@@ -224,14 +224,20 @@ policy back. The deploy now has a `RECOVER` state:
    for `--recover-dwell-s` (2.0 s). That is what "someone is holding it up"
    looks like; the legs can be anywhere between a crouch and standing.
    Each arming and disarming of the gate is logged. Two things veto the
-   gate: the operator E-STOP flag on the pose wire (the pad E-STOP is a
-   latch that only a stack restart clears, so recovering under it would
-   re-enter CONTROL, get e-stopped on the next tick and loop; robot trial
-   2026-09-23 did exactly that 17 times before the fix) and the per-run
-   attempt cap `--recover-max-attempts` (3; `<= 0` = unlimited). A vetoed
-   gate logs `RECOVER blocked (...)` once and SAFE_HOLD is final until the
-   ritual is restarted. Recovery is therefore for watchdog falls, not for a
-   deliberate pad E-STOP.
+   gate: the operator E-STOP flag on the pose wire and the per-run attempt
+   cap `--recover-max-attempts` (3; `<= 0` = unlimited). A vetoed gate logs
+   `RECOVER blocked (...)` once and waits. The pad E-STOP is a latch: the
+   planner stamps `estop = 1` into every pose frame after the damp phase,
+   so recovering under it re-enters CONTROL, gets e-stopped on the next
+   tick and loops (robot trial 2026-09-23 did that 17 times before the
+   veto). To lift a deliberate E-STOP the operator repeats the **full**
+   gesture after releasing the chord and waiting at least 5 s
+   (`X2_ESTOP_CLEAR_MIN_GAP_S`); the pad bridge sends the estop intent with
+   phase `clear`, the
+   planner stamps an explicit `estop = 0`, the deploy unlatches (an absent
+   field never clears it, so a wire flap cannot) and logs
+   `E-STOP cleared on the pose wire -> RECOVER gate free`. Nothing moves
+   until the robot is held upright and still.
 2. **Phase A, stiffen in place** (`--recover-stiffen-s`, 1.5 s): the gains
    ramp from whatever is latched (the pure-damping profile, or the stand-pose
    hold of a false trip) to the deploy gains while the target stays at the

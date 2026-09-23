@@ -414,6 +414,13 @@ def main() -> int:
     pending_delta = 0.0
     estop_gesture = EstopGesture()
     _estop_armed_log_t = 0.0
+    # E-STOP toggle (operator 2026-09-23): after a "damp" the wire flag is
+    # latched; the SAME full gesture, done again after a real chord release
+    # and at least ESTOP_CLEAR_MIN_GAP_S later, lowers it. The gap is the
+    # accident guard: a hand still hammering the triggers under A+X cannot
+    # clear the stop it just placed. -1 = never latched.
+    _estop_damp_sent_t = -1.0
+    ESTOP_CLEAR_MIN_GAP_S = float(os.environ.get("X2_ESTOP_CLEAR_MIN_GAP_S") or 5.0)
 
     _dbg_prev_btns: set[int] = set()
     while True:
@@ -462,9 +469,28 @@ def main() -> int:
                   flush=True)
             send({"intent": "estop", "phase": "soft",
                   "magnitude": "default"})
+        elif _ph == 2 and _estop_damp_sent_t >= 0.0:
+            _gap = time.monotonic() - _estop_damp_sent_t
+            if _gap >= ESTOP_CLEAR_MIN_GAP_S:
+                # Second full gesture -> CLEAR. Nothing moves: the deploy
+                # stays limp in SAFE_HOLD until its RECOVER gate sees the
+                # robot held upright and still (F10 "Fall recovery").
+                _estop_damp_sent_t = -1.0
+                print("[pad-bridge] !!! E-STOP CLEARED by operator gesture: "
+                      "wire flag lowered -- robot stays limp until held "
+                      "upright (RECOVER) or the stack is restarted",
+                      flush=True)
+                send({"intent": "estop", "phase": "clear",
+                      "magnitude": "default"})
+            else:
+                print(f"[pad-bridge] E-STOP gesture repeated {_gap:.1f} s "
+                      f"after the stop -- ignored (clear needs >= "
+                      f"{ESTOP_CLEAR_MIN_GAP_S:.0f} s and a fresh chord)",
+                      flush=True)
         elif _ph == 2:
-            print("[pad-bridge] !!! E-STOP ESCALATED: PURE DAMPING (terminal)",
-                  flush=True)
+            print("[pad-bridge] !!! E-STOP ESCALATED: PURE DAMPING (repeat the "
+                  "full gesture after 5 s to clear)", flush=True)
+            _estop_damp_sent_t = time.monotonic()
             send({"intent": "estop", "phase": "damp",
                   "magnitude": "default"})
         if _ph:

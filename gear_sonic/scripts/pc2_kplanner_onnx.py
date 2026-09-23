@@ -2498,8 +2498,13 @@ _WAIST_REF: list = [None]
 _SERVED_YAW_RATE_REF: list = [0.0]
 # Terminal operator e-stop latch: once set, every outgoing pose payload
 # carries an ``estop`` field (the deploy slams Kp=0/Kd=8 on it; unknown
-# fields are ignored by older deploys). Cleared only by planner restart.
+# fields are ignored by older deploys). Cleared by a planner restart or by
+# the operator repeating the full damping gesture >= 5 s later (phase
+# "clear", 2026-09-23): the latch drops and every payload then carries an
+# explicit ``estop = 0`` so the deploy unlatches too. An ABSENT field never
+# clears it, so a wire flap cannot lift an e-stop.
 _ESTOP_LATCH: list = [False]
+_ESTOP_CLEARED: list = [False]
 _DANCE_QUEUE_REF: list = [None]
 # Persistent yaw-governor trim. Init = calibrated prior (measured 2026-08-03:
 # templates over-turn ~1.85x commanded, so the FIRST plan of a turn is
@@ -2583,6 +2588,8 @@ class PosePublisher:
                 self._overlay_state = applied
         if _ESTOP_LATCH[0]:
             payload["estop"] = np.asarray([1.0], dtype=np.float32)
+        elif _ESTOP_CLEARED[0]:
+            payload["estop"] = np.asarray([0.0], dtype=np.float32)
         waist = _WAIST_REF[0]
         if waist is not None:
             w_applied = waist.step_and_apply(payload, 1.0 / OUTPUT_FPS)
@@ -3214,6 +3221,20 @@ def _zmq_command_thread(
                     #     Kp=0/Kd=8. TERMINAL until stack restart.
                     phase = str(payload.get("phase",
                                 payload.get("magnitude", "soft")))
+                    if phase == "clear":
+                        # Operator repeated the full gesture (pad bridge
+                        # enforces the >= 5 s gap and a fresh chord). Lower
+                        # the wire flag; nothing moves -- the deploy stays
+                        # limp in SAFE_HOLD until its RECOVER gate sees the
+                        # robot held upright and still, or the stack restarts.
+                        log.critical("E-STOP CLEARED from %s -- wire flag "
+                                     "lowered (was %s); deploy may RECOVER "
+                                     "when held upright",
+                                     payload.get("source", "?"),
+                                     "latched" if _ESTOP_LATCH[0] else "clear")
+                        _ESTOP_LATCH[0] = False
+                        _ESTOP_CLEARED[0] = True
+                        continue
                     if phase not in ("soft", "damp"):
                         phase = "soft"
                     log.critical("E-STOP (%s) from %s — aborting dance/"
@@ -3223,6 +3244,7 @@ def _zmq_command_thread(
                                  if phase == "damp" else "")
                     if phase == "damp":
                         _ESTOP_LATCH[0] = True
+                        _ESTOP_CLEARED[0] = False
                     _pc3_announce_estop(phase)
                     if _DANCE_QUEUE_REF[0] is not None:
                         _DANCE_QUEUE_REF[0].put(("stop",))

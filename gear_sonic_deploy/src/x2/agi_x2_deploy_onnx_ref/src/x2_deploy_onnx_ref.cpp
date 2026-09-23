@@ -2773,7 +2773,12 @@ class X2Deploy {
               }
               recover_upright_since_s_ = -1.0;
             } else if (cli_.safe_hold_recover && fresh) {
-              recover_blocked_logged_ = false;
+              if (recover_blocked_logged_) {
+                recover_blocked_logged_ = false;
+                RCLCPP_WARN(node_->get_logger(),
+                            "SAFE_HOLD: operator E-STOP cleared on the pose wire -> "
+                            "RECOVER gate free (hold the robot upright and still)");
+              }
               const auto g_rc = body_frame_gravity_from_quat_wxyz(rs.base_quat_wxyz);
               const double w_rc = std::sqrt(rs.base_ang_vel[0] * rs.base_ang_vel[0]
                                             + rs.base_ang_vel[1] * rs.base_ang_vel[1]

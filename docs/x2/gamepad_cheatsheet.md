@@ -31,6 +31,12 @@ Triangle=Y). A printable map is `gamepad_control_map.html` in this directory.
    - **keep pumping ~1 s more** -> **PURE DAMPING** (full damp).
 - Robot in a deep crouch / tilted low: go straight through to full damping.
 - MC stand-mode refusals while the robot is down are expected — never fight them.
+- **Clearing it (toggle):** release A+X, wait **at least 5 s**, then do the
+  same full gesture again (chord + pumps through to the damp phase). The
+  bridge logs `E-STOP CLEARED`. Nothing moves: the robot stays limp until
+  someone holds it upright and still for 2 s, then the deploy stands it up
+  (F10 "Fall recovery"). A repeat inside 5 s, or trigger hammering without
+  a fresh chord, is ignored and logged.
 
 ## Clip banks (L2 RELEASED; same chord again = next clip in bank; **L1+R1 = STOP**)
 
