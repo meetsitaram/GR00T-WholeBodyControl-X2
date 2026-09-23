@@ -282,6 +282,7 @@ struct CliArgs {
   double      recover_stiffen_s       = 1.5;
   double      recover_standup_s       = 4.0;
   double      recover_max_rate        = 0.4;   // rad/s of the fastest joint
+  int         recover_max_attempts    = 3;     // per run; <=0 = unlimited
   double      max_target_dev_arm   = -1.0;
   double      max_target_dev_head  = -1.0;
   // Per-group multiplicative trim on the trained PD spec (mirror of the
@@ -743,6 +744,7 @@ void PrintUsage()
       << "  --recover-stiffen-s SEC    phase A: gains damping -> deploy in place (1.5)\n"
       << "  --recover-standup-s SEC    phase B: minimum stand-up duration (4.0)\n"
       << "  --recover-max-rate RAD_S   phase B: cap on the fastest joint (0.4)\n"
+      << "  --recover-max-attempts N   recoveries per run before SAFE_HOLD is final (3; <=0 unlimited)\n"
       << "  --ramp-seconds SECONDS     soft-start ramp (default 2.0)\n"
       << "  --max-target-dev RAD       per-joint hard clamp on |target-default|,\n"
       << "                             in radians. Negative/omitted = disabled.\n"
@@ -1123,6 +1125,7 @@ CliArgs ParseCli(int argc, char** argv)
     else if (s == "--recover-stiffen-s")     a.recover_stiffen_s = std::stod(next("--recover-stiffen-s"));
     else if (s == "--recover-standup-s")     a.recover_standup_s = std::stod(next("--recover-standup-s"));
     else if (s == "--recover-max-rate")      a.recover_max_rate = std::stod(next("--recover-max-rate"));
+    else if (s == "--recover-max-attempts")  a.recover_max_attempts = std::stoi(next("--recover-max-attempts"));
     else if (s == "--max-target-dev-arm")   a.max_target_dev_arm   = std::stod(next("--max-target-dev-arm"));
     else if (s == "--max-target-dev-head")  a.max_target_dev_head  = std::stod(next("--max-target-dev-head"));
     else if (s == "--kp-scale")             a.kp_scale          = std::stod(next("--kp-scale"));
@@ -2749,7 +2752,28 @@ class X2Deploy {
             // legs are limp, the helper carries the weight) and from the
             // stand-pose hold of a false trip alike; the gains ramp starts
             // from whatever is latched, so there is never a kp step.
-            if (cli_.safe_hold_recover && fresh) {
+            // Two things veto the gate outright (robot-verified 2026-09-23:
+            // a pad E-STOP is a LATCH on the pose wire, so recovering under
+            // it just re-enters CONTROL, gets e-stopped on the next tick and
+            // loops every ~8 s):
+            //   * the operator E-STOP flag is asserted on the wire, or
+            //   * this run has already used its recovery attempts.
+            const bool estop_on_wire = (zmq_pose_source_ != nullptr)
+                                       && zmq_pose_source_->EstopRequested();
+            const bool attempts_left = (cli_.recover_max_attempts <= 0)
+                                       || (recover_count_ < cli_.recover_max_attempts);
+            if (cli_.safe_hold_recover && fresh && (estop_on_wire || !attempts_left)) {
+              if (!recover_blocked_logged_) {
+                recover_blocked_logged_ = true;
+                RCLCPP_WARN(node_->get_logger(),
+                            "SAFE_HOLD: RECOVER blocked (%s) -- staying in SAFE_HOLD; "
+                            "restart the stack to run again",
+                            estop_on_wire ? "operator E-STOP asserted on the pose wire"
+                                          : "recovery attempts exhausted");
+              }
+              recover_upright_since_s_ = -1.0;
+            } else if (cli_.safe_hold_recover && fresh) {
+              recover_blocked_logged_ = false;
               const auto g_rc = body_frame_gravity_from_quat_wxyz(rs.base_quat_wxyz);
               const double w_rc = std::sqrt(rs.base_ang_vel[0] * rs.base_ang_vel[0]
                                             + rs.base_ang_vel[1] * rs.base_ang_vel[1]
@@ -4270,6 +4294,7 @@ class X2Deploy {
   std::array<double, NUM_DOFS>      recover_kp_start_{};
   std::array<double, NUM_DOFS>      recover_kd_start_{};
   int                               recover_count_ = 0;
+  bool                              recover_blocked_logged_ = false;
   double                            control_entry_s_     = -1.0;
   double                            autostart_target_s_  = -1.0;
   std::uint64_t                     control_tick_        = 0;

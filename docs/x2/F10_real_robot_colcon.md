@@ -223,7 +223,15 @@ policy back. The deploy now has a `RECOVER` state:
    quiet (base |angular velocity| < 0.5 rad/s, every joint |qd| < 1.0 rad/s)
    for `--recover-dwell-s` (2.0 s). That is what "someone is holding it up"
    looks like; the legs can be anywhere between a crouch and standing.
-   Each arming and disarming of the gate is logged.
+   Each arming and disarming of the gate is logged. Two things veto the
+   gate: the operator E-STOP flag on the pose wire (the pad E-STOP is a
+   latch that only a stack restart clears, so recovering under it would
+   re-enter CONTROL, get e-stopped on the next tick and loop; robot trial
+   2026-09-23 did exactly that 17 times before the fix) and the per-run
+   attempt cap `--recover-max-attempts` (3; `<= 0` = unlimited). A vetoed
+   gate logs `RECOVER blocked (...)` once and SAFE_HOLD is final until the
+   ritual is restarted. Recovery is therefore for watchdog falls, not for a
+   deliberate pad E-STOP.
 2. **Phase A, stiffen in place** (`--recover-stiffen-s`, 1.5 s): the gains
    ramp from whatever is latched (the pure-damping profile, or the stand-pose
    hold of a false trip) to the deploy gains while the target stays at the
