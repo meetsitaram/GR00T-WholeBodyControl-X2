@@ -3166,6 +3166,11 @@ PY
 else
     echo -e "$(ts) ${BLUE}[Step 1/4]${NC} Robot pre-flight"
 
+    # PC2-native: the robot is this machine. The pad ritual runs onbot with no
+    # PC2_HOST in its environment, so default to loopback instead of refusing.
+    if [[ -z "$ROBOT_HOST" && "$MODE" == "onbot" ]]; then
+        ROBOT_HOST="127.0.0.1"
+    fi
     if [[ -z "$ROBOT_HOST" ]]; then
         echo -e "${RED}no PC2 address${NC}"
         echo -e "${YELLOW}  Set PC2_HOST=<PC2_IP> in the environment (x2_discover_network.sh"
