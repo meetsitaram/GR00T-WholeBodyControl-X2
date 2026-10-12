@@ -56,6 +56,10 @@
 #   To add them, pin a clip_window of your own corpus (a planted-endpoint
 #   window, 1.6 s for a step, 6 s for a loop) + ``freeze: [arms, head]``
 #   and derive the mirror / half / quarter variants as the recipes below do.
+#   - strafe_context_left, strafe_context_right: kplanner strafe templates from
+#     the retargeted bones-seed corpus. Built only with
+#     tools/build_demo_bank_from_upstream.sh --corpus <pkl> (see the
+#     strafe_context_* entries at the end).
 #
 # Layering:
 #   - Static synth bins (torso left/right yaw, leans): waist ramps from
@@ -621,3 +625,36 @@ primitives:
           hip_yaw_share: 0.30
       - freeze:
           groups: [arms, head]
+
+  # =====================================================================
+  # KPLANNER SIDE-STEP TEMPLATES (2026-10-12) -- not played back. On every
+  # pure-strafe replan pc2_kplanner_onnx.py feeds these 4 frames (root, legs,
+  # waist; arms/head stay as served) to the template planner as its context,
+  # so each plan starts from a real side-step pose instead of the planner's
+  # own crossing side-slide (feet hitting; worse to the left at the robot's
+  # KPLANNER_FIXED_SEED=1234). Frames are copied as retargeted, 30 fps, no
+  # joint edits. Source: bones-seed zoidberg_scuttle_R_001__A528 (left) and
+  # its mirrored-mocap _M (right), chosen from all 37,968 X2 clips + 812
+  # Pico side-step frames; SONIC v16 MuJoCo, 0.3 m/s, seed 1234: executed
+  # foot contact L/R 16.7/7.0 % (stock) -> 0.0/0.0 %. Third-party data, so
+  # these bins only build when the corpus is passed:
+  #   tools/build_demo_bank_from_upstream.sh --corpus /path/to/retargeted_x2_corpus.pkl
+  # =====================================================================
+
+  - bin_name: strafe_context_left
+    family: planner_context
+    notes: "kplanner strafe context (left): zoidberg_scuttle A528 frames 58..61"
+    ops:
+      - clip_window:
+          motion_key: locopost__zoidberg_scuttle_R_001__A528
+          start_frame: 58
+          n_frames: 4
+
+  - bin_name: strafe_context_right
+    family: planner_context
+    notes: "kplanner strafe context (right): zoidberg_scuttle A528_M frames 50..53"
+    ops:
+      - clip_window:
+          motion_key: locopost__zoidberg_scuttle_R_001__A528_M
+          start_frame: 50
+          n_frames: 4

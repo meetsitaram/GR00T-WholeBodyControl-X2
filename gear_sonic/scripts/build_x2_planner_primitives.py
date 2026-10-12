@@ -282,7 +282,7 @@ def write_report(
     built: dict[str, tuple[Recipe, Buffer]],
     recipes: dict[str, Recipe],
     recipes_yaml: Path,
-    source_pkl: Path,
+    source_pkl: list[Path],
     started_at: float,
 ) -> None:
     lines: list[str] = []
@@ -294,7 +294,7 @@ def write_report(
         except ValueError:
             return Path(p).name
     lines.append(f"- Recipes: `{_rel(recipes_yaml)}`")
-    lines.append(f"- Source: `{_rel(source_pkl)}`")
+    lines.append("- Source: " + ", ".join(f"`{_rel(p)}`" for p in source_pkl))
     lines.append(f"- Bins built: **{len(built)}**")
     lines.append(f"- Build wall time: {time.time() - started_at:.1f}s")
     lines.append("")
@@ -341,11 +341,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     repo_data = _REPO_ROOT / "gear_sonic" / "data" / "motions"
     p.add_argument(
-        "--source", type=Path, required=True,
-        help="Source motion library PKL ({motion_key: entry} with dof / "
+        "--source", type=Path, nargs="+", required=True,
+        help="Source motion library PKL(s) ({motion_key: entry} with dof / "
              "root_rot / root_trans_offset / fps), e.g. the regenerated "
              "gear_sonic/data/motions/x2_demo_bank.pkl "
-             "(tools/build_demo_bank_from_upstream.sh).",
+             "(tools/build_demo_bank_from_upstream.sh). Several libraries are "
+             "merged (a key present in two is an error); add your local "
+             "retargeted bones-seed corpus here to build the strafe_context_* bins.",
     )
     p.add_argument(
         "--recipes", type=Path,
@@ -395,9 +397,17 @@ def main(argv: list[str] | None = None) -> int:
     recipes = load_recipes(args.recipes)
     print(f"[build]   {len(recipes)} recipes", flush=True)
 
-    print(f"[build] loading source library from {args.source}", flush=True)
-    source_clips = load_source_clips(args.source)
+    source_clips: dict[str, SourceClip] = {}
+    for src in args.source:
+        print(f"[build] loading source library from {src}", flush=True)
+        clips = load_source_clips(src)
+        dup = sorted(set(clips) & set(source_clips))
+        if dup:
+            print(f"[build] error: {src} repeats motion keys {dup[:5]}", file=sys.stderr)
+            return 2
+        source_clips.update(clips)
     print(f"[build]   {len(source_clips)} clips", flush=True)
+    source_label = " + ".join(str(s) for s in args.source)
 
     family_lookup = load_bin_family_lookup(args.bins)
     if family_lookup:
@@ -433,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.no_write_pkl:
         n = write_primitives_pkl(
-            args.out_pkl, built, recipes, source_pkl=str(args.source)
+            args.out_pkl, built, recipes, source_pkl=source_label
         )
         print(f"[build] wrote {n} bins to {args.out_pkl}", flush=True)
     else:

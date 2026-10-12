@@ -89,7 +89,7 @@ robot's rituals actually launch, next to the laptop copy — run it after a push
 
 | Artifact | Used by | How you get it |
 |---|---|---|
-| `gear_sonic/data/motions/x2_planner_primitives.pkl` | `pc2_kplanner_onnx.py`, `bake_idle_stand_x2m2.py`, `x2_pc2_daemons.sh` | `tools/build_demo_bank_from_upstream.sh` |
+| `gear_sonic/data/motions/x2_planner_primitives.pkl` | `pc2_kplanner_onnx.py`, `bake_idle_stand_x2m2.py`, `x2_pc2_daemons.sh` | `tools/build_demo_bank_from_upstream.sh` (add `--corpus <retargeted X2 bones-seed pkl>` for the kplanner strafe template bins `strafe_context_*`, F01 "Side steps") |
 | `gear_sonic/data/motions/x2_demo_bank.pkl` | `sim_onnx_planner.sh`, `play_x2_motion_mujoco.py`, `run_motion_replay.sh` | `tools/build_demo_bank_from_upstream.sh` |
 | `gear_sonic/data/motions/x2_pad_banks.pkl` | pad clip banks (`run_x2_quest3_planner_stack.sh`) | `tools/build_demo_bank_from_upstream.sh` |
 | `gear_sonic_deploy/data/motions_x2m2/demo_bank/*.x2m2`, `$CKPT_ROOT/dances_x2m2/*.x2m2` | `simstack_local.sh --dances-dir`, `run_motion_replay.sh` | `tools/build_demo_bank_from_upstream.sh`; `pkl_to_x2m2.py` |

@@ -871,6 +871,23 @@ if [[ -f "${PRIMS_LOCAL}" ]]; then
     else
         log "rsync x2_planner_primitives.pkl -> planner_stack/models/"
         rsync_to_pc2 "${PRIMS_LOCAL}" "${PC2_PREFIX}/planner_stack/models/x2_planner_primitives.pkl"
+        # kplanner strafe templates (docs/x2/F01_gamepad.md "Side steps"): exit 1 = bins missing,
+        # 2 = pkl unreadable on this laptop (no joblib) -> stay quiet rather than guess.
+        PRIMS_PY="${REPO_ROOT}/.venv/bin/python"; [[ -x "${PRIMS_PY}" ]] || PRIMS_PY="$(command -v python3)"
+        "${PRIMS_PY}" - "${PRIMS_LOCAL}" <<'PYEOF' 2>/dev/null
+import sys
+try:
+    import joblib
+    bins = set(joblib.load(sys.argv[1]))
+except Exception:
+    sys.exit(2)
+sys.exit(0 if {"strafe_context_left", "strafe_context_right"} <= bins else 1)
+PYEOF
+        prims_rc=$?
+        if [[ ${prims_rc} -eq 1 ]]; then
+            warn "x2_planner_primitives.pkl has no strafe_context_left/right bins -- kplanner strafes keep the stock gait (feet can hit)."
+            warn "    Rebuild with the corpus:  tools/build_demo_bank_from_upstream.sh --corpus <retargeted X2 bones-seed pkl>"
+        fi
     fi
 else
     warn "gear_sonic/data/motions/x2_planner_primitives.pkl missing on laptop -- kplanner lean/crouch/torso primitives will be UNAVAILABLE on PC2."

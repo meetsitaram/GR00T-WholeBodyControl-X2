@@ -1374,6 +1374,9 @@ class OnnxPlannerBackend:
         self._blend_prev_buf: Optional[np.ndarray] = None
         self._blend_prev_pos = 0.0
         self._blend_remaining = 0
+        # Side-step template ({+1, -1} -> context [4, 38]); set by run().
+        self.side_template: Optional[dict] = None
+        self._side_tpl_sign = 0
         log.info(
             "onnx backend ready in %.2fs: %s (kind=%s, filter_qpos_baked=%s)",
             time.monotonic() - t0, onnx_path, kind, self._filter_baked,
@@ -1563,6 +1566,23 @@ class OnnxPlannerBackend:
             raise RuntimeError("replan() called before reset()")
         roles = self._contract["inputs"]
         context = self._get_context()
+        # Side-step template: a pure strafe plans from a real side-step pose
+        # (see _SIDE_TEMPLATE_ENABLED). Graph input only; _buf is untouched.
+        sign = _side_template_sign(target) if self.side_template else 0
+        if sign:
+            tpl_ctx = _rebase_qpos_frames(
+                self.side_template[sign]["context"], context[0, 0, :2],
+                yaw_from_quat_wxyz(np.asarray(context[0, 0, 3:7], np.float64)))
+            # Root, legs and waist from the template; arms and head stay as
+            # served, so the mocap actor's arm pose (e.g. a held leash) is not
+            # replayed into every strafe plan (2026-10-12: wrist yaw swung up
+            # to 100 deg with a full-body template; arms-free = stock levels).
+            tpl_ctx[:, _SIDE_TEMPLATE_KEEP] = context[0, :, _SIDE_TEMPLATE_KEEP]
+            context = tpl_ctx[None]
+        if sign != self._side_tpl_sign:
+            log.info("side-step template %s", {1: "ON (left)", -1: "ON (right)", 0: "off"}[sign])
+            _TAPE.ev("side_template", sign=sign, target=list(target))
+            self._side_tpl_sign = sign
         feeds: dict = {
             roles["context"]: context,
             roles["velocity"]: np.asarray([list(target)], dtype=np.float32),
@@ -2794,6 +2814,103 @@ MAX_REF_YAW_RAD_S: float = float(
 # KPLANNER_SEAM_YAW_ALIGN=0 restores the old behaviour.
 SEAM_YAW_ALIGN: bool = (os.environ.get("KPLANNER_SEAM_YAW_ALIGN", "1") != "0")
 
+# ---- SIDE-STEP TEMPLATE (2026-10-12) ---------------------------------------
+# Robot report: in keyboard/pad side slides the LEFT slide nearly steps on
+# itself and ankle_roll runs past its limit. Root cause is upstream of SONIC:
+# the planner's own lateral reference overlaps the foot meshes by ~10 cm and
+# crosses the ankles over the midline in BOTH directions (no clean side-step
+# in its training data); v16 tracks that into foot contact 11-20 % of ticks.
+# Fix without touching a joint: at every replan whose target is a pure strafe,
+# the 4-frame context fed to the graph is replaced by 4 frames of real mocap
+# (strafe_context_left/right bins of x2_planner_primitives.pkl, recipes in
+# x2_planner_primitives_recipes.yaml: zoidberg_scuttle A528 frame 58 for left,
+# its mirrored-mocap _M frame 50 for right, picked from all 37,968 X2
+# bones-seed clips + our Pico captures), rigidly rebased (yaw + xy) onto the first
+# context frame. Only the graph INPUT changes -- the served buffer is
+# untouched and the seam crossfade blends into the new plan, so there is no
+# reference jump. The plan is bimodal per sampler seed, so the template was
+# chosen at the robot's KPLANNER_FIXED_SEED=1234 AND over random seeds:
+# template graph slow_walk + v16 MuJoCo, 0.3 m/s, seed 1234: executed foot
+# contact L/R 16.7/7.0 % -> 0.0/0.0 %; random seeds: 0/5 bumpy trials each way.
+# Partial blends (70 % / 50 % template) do NOT work -- the crossing returns.
+# Inert when those bins are absent. KPLANNER_SIDE_TEMPLATE=0 disables.
+_SIDE_TEMPLATE_ENABLED: bool = os.environ.get("KPLANNER_SIDE_TEMPLATE", "1") != "0"
+_SIDE_TEMPLATE_MIN_VX: float = 0.05     # |lateral| m/s that counts as a strafe
+_SIDE_TEMPLATE_MAX_VZ: float = 0.10     # forward/back allowed alongside it
+_SIDE_TEMPLATE_MAX_YAW: float = 0.10    # rad/s; arcs keep the model's own gait
+# qpos columns kept from the served context: arms (dof 15..28) + head (29..30)
+_SIDE_TEMPLATE_KEEP = slice(7 + 15, 7 + 31)
+
+
+def _resolve_primitives_pkl_path(cli_path: str = "") -> Optional[Path]:
+    """x2_planner_primitives.pkl: --primitives-pkl, next to this script, the
+    PC2 planner_stack/models copy (pc2_bringup.sh), then the repo path."""
+    cands = [
+        Path(cli_path or ""),
+        Path(__file__).resolve().parent / "x2_planner_primitives.pkl",
+        Path(__file__).resolve().parent / "planner_stack/models/x2_planner_primitives.pkl",
+        _REPO_ROOT / "gear_sonic/data/motions/x2_planner_primitives.pkl",
+    ]
+    for c in cands:
+        if str(c) and c.is_file():
+            return c
+    return None
+
+
+_SIDE_TEMPLATE_BINS = {+1: "strafe_context_left", -1: "strafe_context_right"}
+
+
+def _load_side_template(prims_path: Optional[Path]) -> Optional[dict]:
+    """{+1: left, -1: right} -> {'context': [4, 38] qpos, 'key'} from the
+    strafe_context_* bins of x2_planner_primitives.pkl, or None (inert)."""
+    if not _SIDE_TEMPLATE_ENABLED:
+        log.info("side-step template: disabled (KPLANNER_SIDE_TEMPLATE=0)")
+        return None
+    raw = _load_primitives_pkl(prims_path) if prims_path is not None else {}
+    if not all(b in raw for b in _SIDE_TEMPLATE_BINS.values()):
+        log.warning("side-step template: strafe_context_left/right not in %s -> strafes use the model's "
+                    "own lateral gait (build them: tools/build_demo_bank_from_upstream.sh --corpus "
+                    "<retargeted X2 bones-seed pkl>)", prims_path)
+        return None
+    tpl = {}
+    for sign, name in _SIDE_TEMPLATE_BINS.items():
+        b = raw[name]
+        ctx = np.concatenate([np.asarray(b["root_trans"], np.float32),
+                              np.asarray(b["root_rot_xyzw"], np.float32)[:, [3, 0, 1, 2]],
+                              np.asarray(b["dof"], np.float32)], axis=1)
+        if ctx.shape != (NUM_FRAMES_PER_TOKEN, QPOS_DIM) or abs(float(b.get("fps", 0)) - MODEL_FPS) > 1e-3:
+            raise ValueError(f"{prims_path}: {name} must be {NUM_FRAMES_PER_TOKEN} frames at {MODEL_FPS} fps, "
+                             f"got {ctx.shape} at {b.get('fps')}")
+        tpl[sign] = {"context": ctx, "key": f"{b.get('motion_key', '?')}@{b.get('start_frame', '?')}"}
+    log.info("side-step template: %s (left %s, right %s)", prims_path, tpl[+1]["key"], tpl[-1]["key"])
+    return tpl
+
+
+def _side_template_sign(target: tuple[float, float, float, float]) -> int:
+    """+1 / -1 for a pure left / right strafe target (yaw, vel_x=lateral, vel_z=fwd, hip), else 0."""
+    yaw, vx, vz, _hip = target
+    if (abs(vx) < _SIDE_TEMPLATE_MIN_VX or abs(vz) > _SIDE_TEMPLATE_MAX_VZ
+            or abs(yaw) > _SIDE_TEMPLATE_MAX_YAW):
+        return 0
+    return 1 if vx > 0 else -1
+
+
+def _rebase_qpos_frames(frames: np.ndarray, xy: np.ndarray, yaw: float) -> np.ndarray:
+    """Rigid R_z + xy move so frames[0] sits at (xy, yaw); z and joints untouched."""
+    f = np.array(frames, dtype=np.float64, copy=True)
+    d = _wrap_pi(float(yaw) - yaw_from_quat_wxyz(f[0, 3:7]))
+    c, s = math.cos(d), math.sin(d)
+    rel = f[:, :2] - f[0, :2]
+    f[:, 0] = rel[:, 0] * c - rel[:, 1] * s + float(xy[0])
+    f[:, 1] = rel[:, 0] * s + rel[:, 1] * c + float(xy[1])
+    qw, qz = math.cos(d * 0.5), math.sin(d * 0.5)
+    q = f[:, 3:7].copy()
+    f[:, 3] = qw * q[:, 0] - qz * q[:, 3]
+    f[:, 4] = qw * q[:, 1] - qz * q[:, 2]
+    f[:, 5] = qw * q[:, 2] + qz * q[:, 1]
+    f[:, 6] = qw * q[:, 3] + qz * q[:, 0]
+    return f.astype(np.float32)
+
 # Minimum wall-clock gap between FORCED replans (IDLE->PLAYING reseeds), in ms.
 # Mid-walk intent changes do not replan (see the module docstring) -- but every
 # stick press is an IDLE->PLAYING transition and DOES force one. A rapid burst
@@ -4016,6 +4133,9 @@ def run(args: argparse.Namespace) -> int:
             replan_threshold_frames=args.replan_threshold_frames,
             planner_mode=args.planner_mode,
         )
+    side_tpl = _load_side_template(_resolve_primitives_pkl_path(getattr(args, "primitives_pkl", "")))
+    if isinstance(backend, OnnxPlannerBackend):
+        backend.side_template = side_tpl
 
     # ---- Warmup anchor + first (warm-the-model) replan.
     warmup_qpos = _load_warmup_qpos(
@@ -4279,18 +4399,7 @@ def run(args: argparse.Namespace) -> int:
     _crouch_jhist: list = []      # (t, measured jpos) samples for the CROUCH MODE entry gate
 
     def _resolve_primitives_pkl() -> Optional[Path]:
-        cands = [
-            Path(getattr(args, "primitives_pkl", "") or ""),
-            Path(__file__).resolve().parent / "x2_planner_primitives.pkl",
-            Path(__file__).resolve().parent
-            / "planner_stack/models/x2_planner_primitives.pkl",
-            _REPO_ROOT / "gear_sonic/data/motions/x2_planner_primitives.pkl"
-            if "_REPO_ROOT" in globals() else Path("/nonexistent"),
-        ]
-        for c in cands:
-            if str(c) and c.is_file():
-                return c
-        return None
+        return _resolve_primitives_pkl_path(getattr(args, "primitives_pkl", ""))
     _watchdog_last_log_t = 0.0
 
     # ---- PLAYING -> IDLE stop blend (2026-07-19) --------------------------

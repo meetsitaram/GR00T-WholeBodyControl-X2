@@ -7,6 +7,11 @@ gestures shipped under ``gear_sonic/data/motions/x2_recorded/mc_gestures/``
 synthesized lean/crouch/torso bins plus a synthesized idle stand. No motion
 derived from any third-party mocap corpus is produced unless you opt in.
 
+``--corpus PKL`` (opt-in) adds your local retargeted X2 bones-seed motion library as a
+second source for the planner primitives, which builds the kplanner strafe templates
+(``strafe_context_left/right``, docs/x2/F01_gamepad.md "Side steps"). Without it those
+two bins are skipped and the kplanner strafes with its stock gait.
+
 ``--with-upstream-examples`` ADDITIONALLY retargets the upstream G1 reference clips:
 
 Upstream ships 11 NVIDIA reference motions as G1 body CSVs under
@@ -383,9 +388,11 @@ def stage_x2m2(python: str, bank_pkl: Path, bank: dict, out_dir: Path) -> list[P
     return written
 
 
-def stage_primitives(python: str, bank_pkl: Path, out_pkl: Path, report: Path) -> None:
+def stage_primitives(python: str, bank_pkl: Path, out_pkl: Path, report: Path,
+                     corpus: Path | None = None) -> None:
+    sources = [str(bank_pkl)] + ([str(corpus)] if corpus is not None else [])
     cmd = [python, "-m", "gear_sonic.scripts.build_x2_planner_primitives",
-           "--source", str(bank_pkl), "--recipes", str(RECIPES), "--bins", str(BINS),
+           "--source", *sources, "--recipes", str(RECIPES), "--bins", str(BINS),
            "--out-pkl", str(out_pkl), "--out-report", str(report), "--skip-missing-sources"]
     subprocess.run(cmd, cwd=str(REPO_ROOT), check=True)
     ensure_idle_stand(out_pkl)
@@ -447,9 +454,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="root xy scale G1->X2 (default: X2/G1 hip-to-ankle length ratio from the MJCFs)")
     ap.add_argument("--skip-x2m2", action="store_true")
     ap.add_argument("--skip-primitives", action="store_true")
+    ap.add_argument("--corpus", type=Path, default=None,
+                    help="opt-in: local retargeted X2 bones-seed motion-lib pkl; adds the kplanner "
+                         "strafe templates (strafe_context_left/right) to the planner primitives")
     ap.add_argument("--strict", action="store_true", help="drop clips that fail a sanity gate")
     ap.add_argument("--python", default=sys.executable, help="interpreter for the pkl_to_x2m2 / primitives stages")
     args = ap.parse_args(argv)
+    if args.corpus is not None and not args.corpus.is_file():
+        print(f"[bank] --corpus {args.corpus} not found", file=sys.stderr)
+        return 1
     t0 = time.time()
 
     for p in (args.x2_mjcf, args.g1_mjcf):
@@ -548,7 +561,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[bank] wrote {len(written)} x2m2 clips -> {args.x2m2_dir}")
     if not args.skip_primitives:
         report = args.out_primitives.with_name(args.out_primitives.stem + "_recipes_report.md")
-        stage_primitives(args.python, args.out_bank, args.out_primitives, report)
+        stage_primitives(args.python, args.out_bank, args.out_primitives, report, args.corpus)
         print(f"[bank] wrote {args.out_primitives}")
     print(f"[bank] done in {time.time() - t0:.1f}s")
     return 0

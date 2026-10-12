@@ -118,6 +118,47 @@ subscribes to that feed whenever `--x2-debug-port` is set (it used to start
 the subscriber only with the yaw rebase on, so every sim pad launch refused
 the chord with "no measured joints").
 
+### Side steps (strafe): side-step template
+
+The template planner has no clean lateral gait of its own: its side-slide
+reference crosses the ankles over the midline in both directions, and SONIC
+v16 tracks that into the feet hitting ("left slides almost step on
+themselves", 2026-10-12; with the robot's `KPLANNER_FIXED_SEED=1234` the stock
+plan is worse to the left). With the `strafe_context_left` / `strafe_context_right` bins present in
+`x2_planner_primitives.pkl`, the kplanner plans every pure strafe from a real mocap pose: bones-seed
+`zoidberg_scuttle_R_001__A528` frame 58 for left and its mirrored-mocap `_M`
+frame 50 for right, chosen from all 37,968 X2 clips and 812 side-step frames
+of our own Pico captures. Only the root, legs and waist of the planner's
+4-frame context input change; arms and head stay as they are, no joint is
+edited, forward walking and turns are untouched.
+
+```bash
+tools/build_demo_bank_from_upstream.sh --corpus /path/to/retargeted_x2_corpus.pkl
+```
+
+That is the usual bank / primitives build plus the opt-in `--corpus`; the two bins are recipes
+in `gear_sonic/data/motions/x2_planner_primitives_recipes.yaml` (clip name, start frame, 4
+frames), so change the clip or frame there and rerun. Without `--corpus` (third-party data, never
+committed) the bins are skipped and strafes keep the stock gait. `pc2_bringup.sh` ships the pkl
+to PC2 as before and warns when the bins are missing.
+The kplanner logs `side-step template: <path>` at start and
+`side-step template ON (left|right)` per strafe; `KPLANNER_SIDE_TEMPLATE=0`
+turns it off.
+The seed it was verified at is set in `x2_pc2/robot_env.env.template`
+(`KPLANNER_FIXED_SEED=1234`).
+
+| v16 in MuJoCo, 0.3 m/s, seed 1234 | feet touching L / R | executed speed L / R | lead-foot sole tilt at landing L / R | random seeds: bumpy trials L / R |
+|---|---|---|---|---|
+| stock planner | **16.7 / 7.0 %** | 0.28 / 0.30 m/s | 6.6 / 8.5 deg | 10 / 10 of 10 |
+| template (A528 @58 / _M @50) | **0.0 / 0.0 %** | 0.18 / 0.30 m/s | 13.9 / 9.0 deg | 0 / 0 of 5 |
+
+Status: **sim only**. Watch on the robot: the left strafe is stop-and-go
+(stalls ~38 % of the time, 0.18 m/s) and v16 lands the left lead foot tilted
+~14 deg. That left/right asymmetry comes from the policy: it rolls the left
+ankle ~6 deg at touchdown against ~9.5 deg on the right (limits are symmetric),
+and no template tested landed the left foot flatter. Nothing is robust at
+0.4-0.5 m/s; the strafe speed is the fixed 0.3.
+
 ## Real robot (laptop-free, pad on PC2)
 
 One-time enablement on PC2 (xpadneo driver, hidraw permissions, bluez
