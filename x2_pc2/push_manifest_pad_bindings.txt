@@ -1,0 +1,6 @@
+# Gamepad bindings only (dance banks etc.) -- FILES ONLY.
+#   ./x2_pc2/push_to_pc2.sh --manifest x2_pc2/push_manifest_pad_bindings.txt --pc2 run@<PC2_IP>
+# The ritual sources pad_bindings.env when it starts the pad bridge: takes effect at the next ritual start / reboot.
+#
+# <local path>    <PC2 absolute path>
+x2_pc2/pad_bindings.env    ${PC2_PREFIX}/pad_bindings.env
