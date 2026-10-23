@@ -1,0 +1,14 @@
+# SuperMimic bones_full_v1 320k (planner + pad only) -- FILES ONLY, under new names.
+#   ./x2_pc2/push_to_pc2.sh --manifest x2_pc2/push_manifest_supermimic_320k.txt --pc2 run@<PC2_IP>
+#
+# Ships the single fused pose graph into policies/ next to the incumbent (nothing is replaced)
+# and the env template as a .bak copy. Selecting SuperMimic is the operator's cp of that copy
+# -> robot_env.env at the robot; rolling back is the cp of the previous robot_env.env.
+# The deploy binary must first be rebuilt on PC2 from this branch (pc2_bringup.sh, BUILD_CHAIN C):
+# it carries the upright no-reference stand pose that SuperMimic needs in the model-only fallback.
+# No SMPL encoder: X2_WHOLE_BODY_TELEOP=0 in the template; supermimic.yaml (unity gains, no target LPF).
+#
+# <local path>    <PC2 absolute path>
+gear_sonic_deploy/models/x2_supermimic_bones_full_v1_320000.onnx   ${PC2_PREFIX}/policies/x2_supermimic_bones_full_v1_320000.onnx
+gear_sonic_deploy/configs/real_deploy_tuning/supermimic.yaml        ${PC2_PREFIX}/gear_sonic_deploy/configs/real_deploy_tuning/supermimic.yaml
+x2_pc2/robot_env.env.supermimic_320k.template                      ${PC2_PREFIX}/robot_env.env.bak_supermimic_320k

@@ -3368,7 +3368,13 @@ class X2Deploy {
     std::optional<std::array<double, 4>> tok_ref_override;
     if (zmq_pose_source_ != nullptr &&
         zmq_pose_source_->LastReceivedMonotonicS() < 0.0) {
-      tok_ref_override = wxyz_to_xyzw(rs.base_quat_wxyz);
+      // No pose frame yet: hold the trained stand pose UPRIGHT at the robot's
+      // heading. Overriding with the full measured orientation (pitch/roll
+      // included) made the goal's anchor-orientation term identity every tick,
+      // so a lean never registered as tracking error -- a policy that balances
+      // on that term (SuperMimic 124k) tipped over in ~2 s with no planner,
+      // while the planner-fed path (upright reference) was fine. 2026-10-22.
+      tok_ref_override = yaw_only_quat_xyzw(wxyz_to_xyzw(rs.base_quat_wxyz));
     }
     // ---- whole-body overlay: per-tick source select ----------------------
     // Token graph drives ONLY while the laptop stream is fresh AND engaged;

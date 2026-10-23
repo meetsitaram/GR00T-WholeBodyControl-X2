@@ -36,6 +36,11 @@ pygame
 # Quest3 WebXR stream server (quest3_reader.py wss endpoint)
 websockets
 
+# Pinned to the docker_x2 sim image's MuJoCo: deploy_x2.sh runs the bridge with the repo
+# .venv when one exists, and mujoco 3.17 changed MjSpec.add_equality (data size 12), which
+# crashes compose_x2_with_omnihand.py at sim launch (2026-10-24).
+mujoco==3.12.0
+
 # The two first-party packages (editable installs recommended; see above).
 # gear_sonic[sim] brings: mujoco, tyro, pin, pyyaml, pyzmq, msgpack,
 # msgpack-numpy, opencv-python + base deps (numpy==1.26.4, scipy==1.15.3,

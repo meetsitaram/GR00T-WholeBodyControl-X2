@@ -1,0 +1,72 @@
+# supermimic.yaml -- preset for SuperMimic bones_full_v1 (world-model tracker,
+# branch supermimic-wm of GR00T-WholeBodyControl, 320k export
+# x2_supermimic_bones_full_v1_320000.onnx). 2026-10-23.
+#
+# WHY NOT trained_gains_s0.yaml: that preset carries SONIC-lineage "training
+# wheels" tuned against young S0/S1 checkpoints' habits -- waist kp x2.00 /
+# kd x5.51 (waist-roll ringing) and an 8/16 Hz target LPF. SuperMimic trained in
+# MuJoCo on the vendor plant with plain base gains (kp/kd scale 1.0), in-sim PD
+# at the plant effort limits and armature, targets = default + action_scale *
+# action with NO action clip, NO target filter and NO deviation clamp. Every
+# deviation from that is out of its training distribution, so:
+#
+#   * every kp/kd scale 1.0 (the vendor base gains ARE its trained gains);
+#   * no target LPF (training had none; a filter adds phase lag it never saw);
+#   * action_clip 20 (above anything it emits; same as its eval scorer).
+#
+# NO DEVIATION CLAMPS (operator 2026-10-23, "remove clamps for now"). SuperMimic uses PD
+# targets as torque commands: on the low-kp joints (ankle roll, waist pitch/roll: kp 12.4,
+# effort 24 N*m) full torque needs a 1.94 rad target error, far outside the joint range
+# (+-0.26 rad ankle roll). In the local C++ stack it commanded leg targets up to 2.07 rad from
+# default (p99 1.10, >0.70 on 84 % of ticks); a 0.70 leg clamp truncated that and it fell within
+# 2.5 s of CONTROL, 1.0 / 1.2 / 3.0 all walked. The waist sat on 0.45 most of the session.
+# HARDWARE CAVEATS (unverified): (1) the old 0.45 waist bound was a hardware-safety rule on the
+# X2 (24 N*m waist saturation, snap-back); (2) whether the X2 motor drivers accept targets
+# outside the joint range and saturate torque like the sim does -- if they clip the target to
+# the range, ankle/waist torque authority is lost. Check both before the robot.
+# Kept: soft-start / soft-exit ramps 2 s, tilt watchdog -0.3.
+#
+# STATUS: sim only (local C++ deploy + MuJoCo, planner + pad). Not robot-tested.
+# PRESETS ARE CHECKPOINT-SCOPED: validated_with is the only checkpoint this
+# preset is claimed for.
+# validated_with: (pending) supermimic_bones_full_v1_320000 (sim)
+
+description: |
+  SuperMimic bones_full_v1: faithful to its training plant (all kp/kd scales
+  1.0, no target LPF, no deviation clamps, generous action clip). Ramps and
+  the tilt watchdog only.
+
+action_clip:    20.0
+max_target_dev:        -1.0
+max_target_dev_leg:    -1.0
+max_target_dev_waist:  -1.0
+max_target_dev_arm:    -1.0
+max_target_dev_head:   -1.0
+ramp_seconds:    2.0
+return_seconds:  2.0
+tilt_cos:       -0.3
+target_lpf_hz:        0.0
+target_lpf_hz_leg:    0.0
+target_lpf_hz_waist:  0.0
+target_lpf_hz_arm:    0.0
+target_lpf_hz_head:   0.0
+kp_scale_hip:         1.00
+kp_scale_knee:        1.00
+kp_scale_ankle_pitch: 1.00
+kp_scale_ankle_roll:  1.00
+kp_scale_waist_yaw:   1.00
+kp_scale_waist_pr:    1.00
+kp_scale_shoulder:    1.00
+kp_scale_elbow:       1.00
+kp_scale_wrist:       1.00
+kp_scale_head:        1.00
+kd_scale_hip:         1.00
+kd_scale_knee:        1.00
+kd_scale_ankle_pitch: 1.00
+kd_scale_ankle_roll:  1.00
+kd_scale_waist_yaw:   1.00
+kd_scale_waist_pr:    1.00
+kd_scale_shoulder:    1.00
+kd_scale_elbow:       1.00
+kd_scale_wrist:       1.00
+kd_scale_head:        1.00
