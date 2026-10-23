@@ -346,6 +346,27 @@ Examples:
                    help="Seconds between nudge onsets.")
     p.add_argument("--nudge-duration", type=float, default=0.15,
                    help="Seconds each nudge is held.")
+    p.add_argument("--nudge-axis", choices=("y", "x", "xy"), default="y",
+                   help="Nudge direction in the world frame: y = lateral (default, the E23 probe), x = fore/aft, "
+                        "xy = alternate +x, +y, -x, -y (posture bench, 2026-10-24).")
+    p.add_argument("--nudge-start", type=float, default=0.0,
+                   help="Sim seconds before the first nudge (let the deploy reach CONTROL and settle). 0 = from t=0.")
+    # SLOW PUSH probe (posture bench, operator 2026-10-24: "a steady and slowly increasing force rather than a sudden
+    # push"): a horizontal force at --nudge-body ramped 0 -> level over --push-ramp, held, released over --push-release,
+    # then rest; directions +x, +y, -x, -y (world), the whole set repeated at each comma-separated level. Sim-only.
+    p.add_argument("--push-levels", type=str, default="",
+                   help="comma-separated peak forces (N), e.g. 40,80,120. Empty = off.")
+    p.add_argument("--push-ramp", type=float, default=4.0, help="seconds 0 -> peak")
+    p.add_argument("--push-hold", type=float, default=2.0, help="seconds at peak")
+    p.add_argument("--push-release", type=float, default=1.0, help="seconds peak -> 0")
+    p.add_argument("--push-rest", type=float, default=4.0, help="seconds at zero before the next push")
+    p.add_argument("--push-start", type=float, default=20.0, help="sim seconds before the first push")
+    p.add_argument("--push-point", choices=("neck", "com"), default="neck",
+                   help="neck = the force acts on torso_link at the head_yaw joint's position (force + lever-arm torque "
+                        "about the torso CoM), like a hand on the back of the neck; com = at the --nudge-body CoM.")
+    p.add_argument("--probe-log", type=pathlib.Path, default=None,
+                   help="CSV (container path) of the external wrench on --nudge-body at 50 Hz with time.monotonic() "
+                        "-- the deploy CSVs' clock -- so pushes line up with joint_pos/target_pos (posture bench).")
     p.add_argument("--nudge-alternate", action="store_true", default=True,
                    help="Flip direction each nudge so the robot is not walked "
                         "off the mat by a one-sided push.")
@@ -1893,6 +1914,71 @@ class X2MujocoRosBridge:
         vec[3:6] = R @ axis_body * (sign * mag)
         self.mj_data.xfrc_applied[self._tilt_body_id] = vec
 
+    def _apply_slow_push(self) -> None:
+        """SLOW PUSH probe: ramp -> hold -> release -> rest of a world-horizontal force at the nudge body; +x +y -x -y per
+        level. Shares xfrc_applied[nudge body] with --nudge-force / --tilt-torque (use one)."""
+        lv = getattr(self.args, "push_levels", "") or ""
+        if not lv:
+            return
+        a = self.args
+        if not hasattr(self, "_push_levels"):
+            self._push_levels = [float(x) for x in lv.split(",") if x.strip()]
+            self._push_body = self.mj_model.body(a.nudge_body).id
+            self._push_period = a.push_ramp + a.push_hold + a.push_release + a.push_rest
+            self._push_last = -1
+            self._push_neck = self.mj_model.body("head_yaw_link").id if a.push_point == "neck" else -1
+            if self._push_neck >= 0:
+                self._push_body = self.mj_model.body("torso_link").id
+            print(f"[bridge] SLOW PUSH probe: levels {self._push_levels} N at {a.push_point} "
+                  f"({self.mj_model.body(self._push_body).name}), ramp {a.push_ramp}s hold "
+                  f"{a.push_hold}s release {a.push_release}s rest {a.push_rest}s, +x +y -x -y per level", flush=True)
+        t = float(self.mj_data.time) - a.push_start
+        vec = np.zeros(6)
+        idx = int(t // self._push_period) if t >= 0 else -1
+        if 0 <= idx < 4 * len(self._push_levels):
+            level = self._push_levels[idx // 4]
+            ax, sign = (idx % 4) % 2, (1.0 if (idx % 4) < 2 else -1.0)
+            ph = t - idx * self._push_period
+            if ph < a.push_ramp:
+                mag = level * ph / max(a.push_ramp, 1e-6)
+            elif ph < a.push_ramp + a.push_hold:
+                mag = level
+            elif ph < a.push_ramp + a.push_hold + a.push_release:
+                mag = level * (1.0 - (ph - a.push_ramp - a.push_hold) / max(a.push_release, 1e-6))
+            else:
+                mag = 0.0
+            vec[ax] = sign * mag
+            if self._push_neck >= 0:  # force applied at the neck point: add r x F about the torso CoM
+                r = np.asarray(self.mj_data.xpos[self._push_neck]) - np.asarray(self.mj_data.xipos[self._push_body])
+                vec[3:6] = np.cross(r, vec[0:3])
+            if idx != self._push_last:
+                self._push_last = idx
+                print(f"[bridge] SLOW PUSH #{idx} {level:.0f} N {'+-'[sign < 0]}{'xy'[ax]} at sim t={t:.1f}s", flush=True)
+        self.mj_data.xfrc_applied[self._push_body] = vec
+
+    def _log_probe(self) -> None:
+        """--probe-log: external wrench on the nudge body at 50 Hz, stamped with time.monotonic() (the deploy CSV clock)."""
+        path = getattr(self.args, "probe_log", None)
+        if path is None:
+            return
+        if not hasattr(self, "_probe_f"):
+            self._probe_f = open(str(path), "w")
+            self._probe_f.write("t,sim_t,fx,fy,fz,tx,ty,tz,px,py,pz,lfx,lfy,rfx,rfy\n")
+            self._probe_n = 0
+            self._probe_body = self.mj_model.body("torso_link" if (getattr(self.args, "push_levels", "") and self.args.push_point == "neck")
+                                                  else self.args.nudge_body).id
+            self._probe_ids = [self.mj_model.body(b).id for b in ("pelvis", "left_ankle_roll_link", "right_ankle_roll_link")]
+        self._probe_n += 1
+        if self._probe_n % 20:  # 1 kHz physics -> 50 Hz
+            return
+        w = self.mj_data.xfrc_applied[self._probe_body]
+        P, L, R = (self.mj_data.xpos[i] for i in self._probe_ids)
+        self._probe_f.write("%.6f,%.4f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\n" % (
+            (time.monotonic(), float(self.mj_data.time)) + tuple(float(x) for x in w)
+            + (float(P[0]), float(P[1]), float(P[2]), float(L[0]), float(L[1]), float(R[0]), float(R[1]))))
+        if self._probe_n % 1000 == 0:
+            self._probe_f.flush()
+
     def _apply_nudge(self) -> None:
         """E23: periodic chest-level shove to excite the waist.
 
@@ -1915,14 +2001,22 @@ class X2MujocoRosBridge:
                   f"{self.args.nudge_duration:.2f}s", flush=True)
         if self._nudge_body_id < 0:
             return
-        t = float(self.mj_data.time)
+        t = float(self.mj_data.time) - float(getattr(self.args, "nudge_start", 0.0) or 0.0)
+        vec = np.zeros(6)
+        if t < 0.0:
+            self.mj_data.xfrc_applied[self._nudge_body_id] = vec
+            return
         phase = t % max(self.args.nudge_period, 1e-6)
         on = phase < self.args.nudge_duration
-        vec = np.zeros(6)
         if on:
             idx = int(t // max(self.args.nudge_period, 1e-6))
-            sign = -1.0 if (self.args.nudge_alternate and idx % 2) else 1.0
-            vec[1] = sign * f          # world-Y = lateral shove at the chest
+            axis = getattr(self.args, "nudge_axis", "y")
+            if axis == "xy":  # +x, +y, -x, -y
+                ax, sign = idx % 2, (1.0 if (idx // 2) % 2 == 0 else -1.0)
+            else:
+                ax = 0 if axis == "x" else 1
+                sign = -1.0 if (self.args.nudge_alternate and idx % 2) else 1.0
+            vec[ax] = sign * f         # world-X = fore/aft, world-Y = lateral shove at the chest
         self.mj_data.xfrc_applied[self._nudge_body_id] = vec
 
     # ----------------------------------------------------------------
@@ -1968,6 +2062,8 @@ class X2MujocoRosBridge:
         """
         self._apply_nudge()
         self._apply_tilt()
+        self._apply_slow_push()
+        self._log_probe()
         if not self._first_command_received:
             # Frozen-body publish: state stays at RSI values, the deploy
             # gets fresh timestamps so its freshness check still clears.

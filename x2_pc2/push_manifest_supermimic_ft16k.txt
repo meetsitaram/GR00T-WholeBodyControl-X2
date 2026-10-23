@@ -1,0 +1,15 @@
+# SuperMimic fine-tune bones_ft_mc_dr 16k (planner + pad only) on the vendor MC gains -- FILES ONLY, new names.
+#   ./x2_pc2/push_to_pc2.sh --manifest x2_pc2/push_manifest_supermimic_ft16k.txt --pc2 run@<PC2_IP>
+#
+# Ships the fused pose graph into policies/ (nothing replaced), the mc_20261024 plant yaml, and the env template as a
+# .bak copy. Selecting it is the operator's cp of that copy -> robot_env.env (carry PC1_HOST etc. over: diff first);
+# rolling back is the cp of the previous robot_env.env.
+# FIRST rebuild the deploy binary on PC2 from this branch (pc2_bringup.sh, BUILD_CHAIN C): plant_loader.hpp must parse
+# the plant's stiffness/damping tables, otherwise X2_PLANT=mc_20261024 silently runs the soft vendor gains. Proof in the
+# deploy log: "[plant] RUNTIME PLANT LOADED: mc_20261024 ... (waist_pitch kp 40 kd 5 action_scale 0.485101)".
+#
+# <local path>    <PC2 absolute path>
+gear_sonic_deploy/models/x2_supermimic_ft_mc_dr_16000.onnx          ${PC2_PREFIX}/policies/x2_supermimic_ft_mc_dr_16000.onnx
+gear_sonic/config/robot_plant/x2_ultra_mc_20261024.yaml             ${PC2_PREFIX}/gear_sonic/config/robot_plant/x2_ultra_mc_20261024.yaml
+gear_sonic_deploy/configs/real_deploy_tuning/supermimic.yaml        ${PC2_PREFIX}/gear_sonic_deploy/configs/real_deploy_tuning/supermimic.yaml
+x2_pc2/robot_env.env.supermimic_ft16k.template                      ${PC2_PREFIX}/robot_env.env.bak_supermimic_ft16k

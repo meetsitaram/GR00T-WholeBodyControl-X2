@@ -35,6 +35,12 @@
  *   action_scale[i] = 0.25 * effort(j) / (armature(j) * w^2)   <-- UNSCALED kp,
  *                     so a deployment stiffening shows up as more torque per
  *                     unit error, not as a rescaled command range.
+ *
+ * Optional ABSOLUTE gains (2026-10-24, plant mc_20261024 = the vendor MC gains):
+ * `stiffness:` / `damping:` sections replace armature*w^2 / 2*zeta*armature*w
+ * (before deployment_k*_scale). action_scale stays on the ARMATURE kp, exactly
+ * as gear_sonic/envs/manager_env/robots/plant_config.py does. A plant with a
+ * stiffness section must cover every joint (missing key = refuse).
  */
 
 #include "policy_parameters.hpp"
@@ -91,7 +97,7 @@ inline Plant LoadPlant(const std::string& path) {
   static const std::regex freq_re(R"(^natural_freq_hz:\s*([0-9.]+))");
   static const std::regex zeta_re(R"(^damping_ratio:\s*([0-9.]+))");
 
-  detail::KeyTable arm, eff, kps_s, kds_s, dpos;
+  detail::KeyTable arm, eff, kps_s, kds_s, dpos, stiff, damp;
   std::string name = "unknown", section;
   double freq_hz = 10.0, zeta = 2.0;
 
@@ -111,6 +117,8 @@ inline Plant LoadPlant(const std::string& path) {
       else if (section == "deployment_kp_scale") kps_s.emplace_back(k, v);
       else if (section == "deployment_kd_scale") kds_s.emplace_back(k, v);
       else if (section == "default_joint_pos")   dpos.emplace_back(k, v);
+      else if (section == "stiffness")           stiff.emplace_back(k, v);
+      else if (section == "damping")             damp.emplace_back(k, v);
     }
   }
   if (arm.empty() || eff.empty())
@@ -130,8 +138,13 @@ inline Plant LoadPlant(const std::string& path) {
     detail::lookup(kds_s, j, &ds);
     detail::lookup(dpos, j, &d0);
     const double kp_train = a * w * w;
-    p.kp[i]           = kp_train * ks;
-    p.kd[i]           = 2.0 * zeta * a * w * ds;
+    double kp_abs = kp_train, kd_abs = 2.0 * zeta * a * w;
+    if (!stiff.empty() && !detail::lookup(stiff, j, &kp_abs))
+      throw std::runtime_error("plant " + name + ": stiffness table has no entry for " + j);
+    if (!damp.empty() && !detail::lookup(damp, j, &kd_abs))
+      throw std::runtime_error("plant " + name + ": damping table has no entry for " + j);
+    p.kp[i]           = kp_abs * ks;
+    p.kd[i]           = kd_abs * ds;
     p.action_scale[i] = 0.25 * e / kp_train;   // UNSCALED kp, deliberately
     p.default_angle[i] = d0;
     ++p.parsed_joints;

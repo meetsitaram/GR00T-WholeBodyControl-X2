@@ -376,6 +376,13 @@ REMOTE=$(ssh -o ConnectTimeout=8 "run@$PC2_IP" "
     echo \"rheadbypass \$HB -\"
     echo \"rheaddev \$HD -\"
     echo \"rmodel \$(basename \"\${X2_RITUAL_MODEL:-\$P/policies/x2_sonic_v16ft8_45000_dual.onnx}\") -\"
+    # The pose graph the ritual actually loads: X2_RITUAL_MODEL, or for a *_dual.onnx its
+    # <name>_g1.onnx sibling (start_x2_deploy_ritual.sh). Hash THAT file, not the legacy slot.
+    RM=\"\${X2_RITUAL_MODEL:-\$P/policies/x2_sonic_v16ft8_45000_dual.onnx}\"
+    case \"\$RM\" in *_dual.onnx) RM=\"\${RM%_dual.onnx}_g1.onnx\" ;; esac
+    if [ -f \"\$RM\" ]; then
+      echo \"rposemodel \$(md5sum \"\$RM\" | cut -d' ' -f1) \$(date -r \"\$RM\" '+%Y-%m-%d_%H:%M:%S')\"
+    fi
     if [ -f \"\$T\" ]; then
       echo \"rtunefp \$(grep -vE '^[[:space:]]*(#|$)' \"\$T\" | sed 's/#.*//; s/[[:space:]]*$//' | grep -v '^$' | sort | md5sum | cut -d' ' -f1) -\"
     else echo \"rtunefp MISSING -\"; fi
@@ -433,6 +440,11 @@ r_field() { echo "$REMOTE" | awk -v k="$1" '$1 ~ k {print $2; exit}'; }
 r_time()  { echo "$REMOTE" | awk -v k="$1" '$1 ~ k {print $3; exit}'; }
 
 REMOTE_SONIC_MD5=$(r_field "agibot_x2_sonic.onnx"); REMOTE_SONIC_T=$(r_time "agibot_x2_sonic.onnx")
+# Prefer the pose graph the ritual actually loads (robot_env.env X2_RITUAL_MODEL); the
+# legacy policies/agibot_x2_sonic.onnx slot is only a fallback when that cannot be resolved.
+if [[ -n "$(r_field "^rposemodel$")" ]]; then
+  REMOTE_SONIC_MD5=$(r_field "^rposemodel$"); REMOTE_SONIC_T=$(r_time "^rposemodel$")
+fi
 HF=$(r_field "^handoff$");                          HF_T=$(r_time "^handoff$")
 
 # --- sonic: prefer the local ONNX that MATCHES the robot (unless overridden) ---

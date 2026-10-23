@@ -74,6 +74,11 @@ class Plant:
             k: float(v) for k, v in (data.get("default_joint_pos") or {}).items()}
         self.natural_freq: float = 2.0 * math.pi * float(data.get("natural_freq_hz", 10.0))
         self.damping_ratio: float = float(data.get("damping_ratio", 2.0))
+        #: Optional ABSOLUTE PD gains (substring tables). When present they replace armature*w^2 and
+        #: 2*zeta*armature*w as the gains the plant is driven with (x2_ultra_mc_20261024: the vendor MC gains).
+        #: action_scale_for ignores them on purpose -- see there.
+        self.stiffness: dict[str, float] = {k: float(v) for k, v in (data.get("stiffness") or {}).items()}
+        self.damping: dict[str, float] = {k: float(v) for k, v in (data.get("damping") or {}).items()}
 
     def _match(self, table: dict[str, float], joint: str, what: str) -> float:
         for key, val in table.items():
@@ -94,11 +99,19 @@ class Plant:
     def effort_for(self, joint: str) -> float:
         return self._match(self.effort, joint, "effort")
 
-    def kp_for(self, joint: str) -> float:
-        """Training-equivalent implicit-PD stiffness: armature * w^2."""
+    def kp_armature_for(self, joint: str) -> float:
+        """The armature-convention stiffness armature * w^2 (what action_scale is defined against)."""
         return self.armature_for(joint) * self.natural_freq ** 2
 
+    def kp_for(self, joint: str) -> float:
+        """PD stiffness: the plant's ``stiffness`` table if it has one, else armature * w^2."""
+        if self.stiffness:
+            return self._match(self.stiffness, joint, "stiffness")
+        return self.kp_armature_for(joint)
+
     def kd_for(self, joint: str) -> float:
+        if self.damping:
+            return self._match(self.damping, joint, "damping")
         return 2.0 * self.damping_ratio * self.armature_for(joint) * self.natural_freq
 
     def action_scale_for(self, joint: str) -> float:
@@ -109,8 +122,12 @@ class Plant:
         the action space. Preserved here because it is what every existing
         checkpoint was trained with; fixing it means giving action_scale its own
         table and retraining.
+
+        Always against the ARMATURE kp, never a ``stiffness`` table (same as plant_loader.hpp): a plant with
+        explicit gains keeps the action mapping of its armature twin, so its checkpoints stay comparable and a
+        policy can be fine-tuned across the gain change.
         """
-        return 0.25 * self.effort_for(joint) / self.kp_for(joint)
+        return 0.25 * self.effort_for(joint) / self.kp_armature_for(joint)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Plant {self.name} from {self.source.name}>"
